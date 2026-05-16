@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sentence Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3ece0;
+    --paper-edge: #e8dfcd;
+    --ink: #1c160d;
+    --ink-soft: #4a3f2c;
+    --faded: #b8a98a;
+    --very-faded: #d8ccb1;
+    --highlight: #f5d76e;
+    --highlight-soft: #fae8a8;
+    --accent: #b14a2c;
+    --rule: #d6c9ac;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; padding: 0; overscroll-behavior: none; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Newsreader', Georgia, serif;
+    font-feature-settings: "liga" 1, "kern" 1;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(at 20% 10%, rgba(177,74,44,0.04) 0%, transparent 50%),
+      radial-gradient(at 80% 90%, rgba(28,22,13,0.04) 0%, transparent 50%);
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top) 0 0;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 26px;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .brand .dot { color: var(--accent); }
+  .stats {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+
+  /* Reader area */
+  .reader-wrap {
+    overflow-x: hidden;
+    padding: 28px 22px 200px;
+    scroll-behavior: smooth;
+  }
+  .reader {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 22px;
+    line-height: 1.65;
+    font-weight: 400;
+    letter-spacing: 0.005em;
+  }
+  .reader .sent {
+    color: var(--faded);
+    transition: color 280ms ease, background-color 280ms ease, box-shadow 280ms ease;
+    padding: 1px 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    /* Reserve space at top (for nav) and bottom (for fixed controls)
+       so scrollIntoView keeps the highlighted sentence clear of overlays. */
+    scroll-margin-top: 80px;
+    scroll-margin-bottom: 200px;
+  }
+  .reader .sent.active {
+    color: var(--ink);
+    background-color: var(--highlight);
+    box-shadow:
+      0 0 0 2px var(--highlight),
+      0 1px 0 var(--highlight-soft);
+  }
+  .reader .sent.read {
+    color: var(--ink-soft);
+  }
+  .reader .sent:hover:not(.active) {
+    color: var(--ink-soft);
+  }
+  .reader p { margin: 0 0 1.1em; }
+
+  /* Empty state */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--ink-soft);
+  }
+  .empty h2 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 32px;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .empty p { font-size: 17px; margin: 0 0 24px; max-width: 380px; line-height: 1.5; }
+  .empty .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* Buttons */
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: inherit;
+  }
+  .btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 0;
+    transition: all 160ms ease;
+  }
+  .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+  .btn.primary:hover { background: var(--ink); border-color: var(--ink); }
+
+  /* Control bar */
+  .controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, var(--paper) 70%, rgba(243,236,224,0));
+    padding: 24px 22px calc(20px + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+  .controls > * { pointer-events: auto; }
+  .controls-inner {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .progress {
+    height: 2px;
+    background: var(--very-faded);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .progress .bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 120ms linear;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--ink);
+    transition: background 160ms ease, transform 100ms ease;
+  }
+  .icon-btn:hover { background: var(--paper-edge); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn.play {
+    background: var(--ink);
+    color: var(--paper);
+    width: 52px;
+    height: 52px;
+  }
+  .icon-btn.play:hover { background: var(--accent); }
+  .icon-btn svg { width: 22px; height: 22px; }
+  .icon-btn.play svg { width: 24px; height: 24px; }
+
+  .wpm-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .wpm-value {
+    font-size: 18px;
+    color: var(--ink);
+    font-weight: 500;
+    min-width: 38px;
+    text-align: right;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 110px;
+    height: 2px;
+    background: var(--rule);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--paper);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--paper);
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(28,22,13,0.45);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 100;
+    padding: 0;
+  }
+  @media (min-width: 600px) {
+    .modal-backdrop { align-items: center; padding: 24px; }
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--paper);
+    width: 100%;
+    max-width: 600px;
+    padding: 22px;
+    border-top: 3px solid var(--ink);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+  }
+  @media (min-width: 600px) { .modal { border: 3px solid var(--ink); } }
+  .modal h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    margin: 0 0 4px;
+    font-size: 28px;
+    color: var(--ink);
+  }
+  .modal p {
+    margin: 0 0 16px;
+    color: var(--ink-soft);
+    font-size: 15px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    flex: 1;
+    background: #fbf6ea;
+    border: 1px solid var(--rule);
+    padding: 14px;
+    font-family: 'Newsreader', serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink);
+    resize: vertical;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--ink); }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    justify-content: flex-end;
+  }
+
+  /* Settings drawer */
+  .settings {
+    border-top: 1px solid var(--rule);
+    margin-top: 14px;
+    padding-top: 14px;
+    display: none;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+  }
+  .settings.open { display: flex; }
+  .setting { display: flex; align-items: center; gap: 8px; }
+  .setting input[type="number"] {
+    width: 56px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    outline: none;
+  }
+  .setting input[type="number"]:focus { border-color: var(--ink); }
+
+  .top-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .tiny-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    background: transparent;
+  }
+  .tiny-btn:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* No-scrollbar reading area */
+  body::-webkit-scrollbar { width: 6px; }
+  body::-webkit-scrollbar-thumb { background: var(--very-faded); }
+  body::-webkit-scrollbar-track { background: transparent; }
+
+  /* Selection */
+  ::selection { background: var(--highlight); color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="brand">Sentence<span class="dot">.</span> Reader</div>
+    <div class="top-actions">
+      <button class="tiny-btn" id="settingsBtn">Settings</button>
+      <button class="tiny-btn" id="newTextBtn">New Text</button>
+    </div>
+  </header>
+
+  <main class="reader-wrap" id="readerWrap">
+    <div id="reader" class="reader"></div>
+    <div class="empty" id="emptyState">
+      <h2>One sentence at a time.</h2>
+      <p>Paste any text and it gets highlighted sentence by sentence, with each one held just long enough to read at your chosen pace.</p>
+      <div class="actions">
+        <button class="btn primary" id="pasteBtn">Paste Text</button>
+        <button class="btn" id="sampleBtn">Try a Sample</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="controls">
+    <div class="controls-inner">
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="control-row">
+        <div class="stats" id="stats">— / —</div>
+        <div class="transport">
+          <button class="icon-btn" id="prevBtn" aria-label="Previous sentence">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20L9 12l10-8M5 19V5"/></svg>
+          </button>
+          <button class="icon-btn play" id="playBtn" aria-label="Play">
+            <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="icon-btn" id="nextBtn" aria-label="Next sentence">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8M19 5v14"/></svg>
+          </button>
+        </div>
+        <div class="wpm-control">
+          <input type="range" id="wpm" min="100" max="800" step="10" value="300">
+          <span><span class="wpm-value" id="wpmVal">300</span> wpm</span>
+        </div>
+      </div>
+      <div class="settings" id="settingsPanel">
+        <div class="setting">
+          <span>Min ms per sentence</span>
+          <input type="number" id="minMs" value="700" min="0" max="5000" step="50">
+        </div>
+        <div class="setting">
+          <span>Extra pause after period (ms)</span>
+          <input type="number" id="pauseMs" value="120" min="0" max="2000" step="20">
+        </div>
+        <div class="setting">
+          <span>Pause between paragraphs (ms)</span>
+          <input type="number" id="paraPauseMs" value="600" min="0" max="5000" step="50">
+        </div>
+        <div class="setting">
+          <span>Auto-scroll</span>
+          <input type="checkbox" id="autoScroll" checked>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3>Paste your text</h3>
+    <p>Articles, essays, book chapters — anything. The longer the better.</p>
+    <textarea id="textInput" placeholder="Paste here…"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="cancelModal">Cancel</button>
+      <button class="btn primary" id="loadText">Load</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- Sentence splitting ----
+  // Pragmatic regex split: handles common abbreviations and ellipses.
+  const ABBREVS = ['Mr','Mrs','Ms','Mx','Dr','Jr','Sr','St','Prof','Inc','Ltd','Co',
+                   'etc','vs','approx','dept','Capt','Lt','Sgt','Gen','Rev','Hon',
+                   'e.g','i.e','U.S','U.K','a.m','p.m','No'];
+
+  function splitSentences(text) {
+    if (!text) return [];
+    // Normalize whitespace; keep paragraph breaks as a marker.
+    let t = text.replace(/\r\n/g, '\n');
+
+    // Protect abbreviations: replace their period with a token.
+    let protectedText = t;
+    ABBREVS.forEach(a => {
+      const re = new RegExp('\\b' + a.replace(/\./g, '\\.') + '\\.', 'g');
+      protectedText = protectedText.replace(re, a.replace(/\./g, '§') + '§');
+    });
+    // Protect decimals (e.g. 3.14)
+    protectedText = protectedText.replace(/(\d)\.(\d)/g, '$1§$2');
+    // Protect ellipses
+    protectedText = protectedText.replace(/\.{3,}/g, '⟦ELLIPSIS⟧');
+
+    // Split on sentence boundaries: . ! ? followed by whitespace and (capital letter | quote | digit | dash).
+    // Also split on double newline as a paragraph boundary.
+    const parts = [];
+    const paragraphs = protectedText.split(/\n{2,}/);
+    paragraphs.forEach((para, pIdx) => {
+      const sentences = para.split(/(?<=[.!?])["')\]]?\s+(?=["'(\[]?[A-Z0-9—–-])/);
+      sentences.forEach(s => {
+        const cleaned = s
+          .replace(/⟦ELLIPSIS⟧/g, '...')
+          .replace(/§/g, '.')
+          .trim();
+        if (cleaned.length) parts.push({ text: cleaned, paragraphBreakAfter: false });
+      });
+      if (parts.length && pIdx < paragraphs.length - 1) {
+        parts[parts.length - 1].paragraphBreakAfter = true;
+      }
+    });
+    return parts;
+  }
+
+  function countWords(s) {
+    const m = s.match(/\b[\w'-]+\b/g);
+    return m ? m.length : 1;
+  }
+
+  // ---- State ----
+  const state = {
+    sentences: [],
+    idx: 0,
+    playing: false,
+    wpm: 300,
+    minMs: 700,
+    pauseMs: 120,
+    paraPauseMs: 600,
+    autoScroll: true,
+    timer: null,
+    startTime: 0,
+    plannedDuration: 0,
+    progressRaf: null,
+  };
+
+  // ---- DOM ----
+  const $ = sel => document.querySelector(sel);
+  const reader = $('#reader');
+  const readerWrap = $('#readerWrap');
+  const emptyState = $('#emptyState');
+  const playBtn = $('#playBtn');
+  const playIcon = $('#playIcon');
+  const prevBtn = $('#prevBtn');
+  const nextBtn = $('#nextBtn');
+  const wpmInput = $('#wpm');
+  const wpmVal = $('#wpmVal');
+  const minMsInput = $('#minMs');
+  const pauseMsInput = $('#pauseMs');
+  const paraPauseMsInput = $('#paraPauseMs');
+  const autoScrollInput = $('#autoScroll');
+  const stats = $('#stats');
+  const bar = $('#bar');
+  const modal = $('#modalBackdrop');
+  const textInput = $('#textInput');
+
+  // ---- Rendering ----
+  function render() {
+    if (!state.sentences.length) {
+      reader.innerHTML = '';
+      emptyState.style.display = 'flex';
+      stats.textContent = '— / —';
+      return;
+    }
+    emptyState.style.display = 'none';
+    const frag = document.createDocumentFragment();
+    let currentP = document.createElement('p');
+    state.sentences.forEach((s, i) => {
+      const span = document.createElement('span');
+      span.className = 'sent' + (i === state.idx ? ' active' : (i < state.idx ? ' read' : ''));
+      span.textContent = s.text;
+      span.dataset.idx = i;
+      span.addEventListener('click', () => {
+        goTo(i);
+      });
+      currentP.appendChild(span);
+      currentP.appendChild(document.createTextNode(' '));
+      if (s.paragraphBreakAfter) {
+        frag.appendChild(currentP);
+        currentP = document.createElement('p');
+      }
+    });
+    if (currentP.childNodes.length) frag.appendChild(currentP);
+    reader.innerHTML = '';
+    reader.appendChild(frag);
+    updateStats();
+    if (state.autoScroll) scrollActiveIntoView();
+  }
+
+  function updateActiveOnly() {
+    const spans = reader.querySelectorAll('.sent');
+    spans.forEach((sp, i) => {
+      sp.classList.toggle('active', i === state.idx);
+      sp.classList.toggle('read', i < state.idx);
+    });
+    updateStats();
+    if (state.autoScroll) scrollActiveIntoView();
+  }
+
+  function updateStats() {
+    if (!state.sentences.length) { stats.textContent = '— / —'; return; }
+    stats.textContent = `${String(state.idx + 1).padStart(2,'0')} / ${String(state.sentences.length).padStart(2,'0')}`;
+  }
+
+  function scrollActiveIntoView() {
+    const active = reader.querySelector('.sent.active');
+    if (!active) return;
+    // scrollIntoView is the most iframe/webview-friendly scroll method:
+    // it propagates up through nested scroll containers (including iframe
+    // boundaries) so it works even when the parent page is the actual
+    // scrolling element. 'nearest' avoids jitter by only scrolling when
+    // the sentence isn't already visible (accounting for scroll-margin).
+    try {
+      active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    } catch (e) {
+      active.scrollIntoView();
+    }
+  }
+
+  // ---- Timing ----
+  function durationFor(sentence) {
+    const words = countWords(sentence.text);
+    const base = (words / state.wpm) * 60 * 1000;
+    const extra = state.pauseMs + (sentence.paragraphBreakAfter ? state.paraPauseMs : 0);
+    return Math.max(state.minMs, base) + extra;
+  }
+
+  function startProgress(duration) {
+    cancelAnimationFrame(state.progressRaf);
+    state.startTime = performance.now();
+    state.plannedDuration = duration;
+    const tick = (now) => {
+      const elapsed = now - state.startTime;
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      bar.style.width = pct + '%';
+      if (state.playing && elapsed < duration) {
+        state.progressRaf = requestAnimationFrame(tick);
+      }
+    };
+    state.progressRaf = requestAnimationFrame(tick);
+  }
+
+  function stopProgress() {
+    cancelAnimationFrame(state.progressRaf);
+  }
+
+  function scheduleNext() {
+    clearTimeout(state.timer);
+    if (!state.playing) return;
+    if (state.idx >= state.sentences.length) { stop(); return; }
+    const dur = durationFor(state.sentences[state.idx]);
+    startProgress(dur);
+    state.timer = setTimeout(() => {
+      if (state.idx < state.sentences.length - 1) {
+        state.idx++;
+        updateActiveOnly();
+        scheduleNext();
+      } else {
+        stop();
+        bar.style.width = '100%';
+      }
+    }, dur);
+  }
+
+  function play() {
+    if (!state.sentences.length) return;
+    state.playing = true;
+    playIcon.innerHTML = '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>';
+    scheduleNext();
+  }
+  function pause() {
+    state.playing = false;
+    clearTimeout(state.timer);
+    stopProgress();
+    playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+  }
+  function stop() {
+    pause();
+  }
+  function togglePlay() {
+    if (state.playing) pause(); else play();
+  }
+  function goTo(i) {
+    const wasPlaying = state.playing;
+    pause();
+    state.idx = Math.max(0, Math.min(state.sentences.length - 1, i));
+    bar.style.width = '0%';
+    updateActiveOnly();
+    if (wasPlaying) play();
+  }
+  function next() { goTo(state.idx + 1); }
+  function prev() { goTo(state.idx - 1); }
+
+  // ---- Load text ----
+  function loadText(text) {
+    pause();
+    state.sentences = splitSentences(text);
+    state.idx = 0;
+    bar.style.width = '0%';
+    render();
+  }
+
+  // ---- Sample ----
+  const SAMPLE = `The trick to reading more is to read faster — but faster how? Most apps flash one word at a time in the middle of your screen. It works, but you lose the shape of the sentence. You lose the rhythm.
+
+Try this instead. The whole sentence sits in front of you, highlighted, held just long enough for your eye to take it in. Then it moves on. A short sentence flashes by. A longer, more involved sentence — the kind with clauses tucked inside other clauses, branching like a small river system — gets the time it deserves.
+
+Comprehension comes from rhythm as much as speed. Punctuation is timing. A period is a beat. A paragraph break is a breath. When the pacing matches the prose, reading stops feeling like work.
+
+Adjust the WPM. Skip around. Pause when something lands. The point isn't to race — it's to keep moving when you'd otherwise drift.`;
+
+  // ---- Wire up ----
+  $('#playBtn').addEventListener('click', togglePlay);
+  $('#nextBtn').addEventListener('click', next);
+  $('#prevBtn').addEventListener('click', prev);
+
+  wpmInput.addEventListener('input', e => {
+    state.wpm = parseInt(e.target.value, 10);
+    wpmVal.textContent = state.wpm;
+    if (state.playing) { pause(); play(); }
+  });
+  minMsInput.addEventListener('change', e => {
+    state.minMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+  });
+  pauseMsInput.addEventListener('change', e => {
+    state.pauseMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+  });
+  paraPauseMsInput.addEventListener('change', e => {
+    state.paraPauseMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+  });
+  autoScrollInput.addEventListener('change', e => {
+    state.autoScroll = e.target.checked;
+  });
+
+  $('#settingsBtn').addEventListener('click', () => {
+    $('#settingsPanel').classList.toggle('open');
+  });
+
+  function openModal() { modal.classList.add('open'); setTimeout(() => textInput.focus(), 50); }
+  function closeModal() { modal.classList.remove('open'); }
+  $('#newTextBtn').addEventListener('click', openModal);
+  $('#pasteBtn').addEventListener('click', openModal);
+  $('#cancelModal').addEventListener('click', closeModal);
+  $('#loadText').addEventListener('click', () => {
+    const t = textInput.value.trim();
+    if (t) { loadText(t); closeModal(); }
+  });
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  $('#sampleBtn').addEventListener('click', () => loadText(SAMPLE));
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.code === 'ArrowRight') { next(); }
+    else if (e.code === 'ArrowLeft') { prev(); }
+  });
+
+  // Initial render
+  render();
+})();
+</script>
+</body>
+</html>
