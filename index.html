@@ -223,11 +223,19 @@
   }
 
   /* ===== Reader view ===== */
+  /* Reader header is sticky so the ★ / Nav / Settings buttons are always
+     reachable while reading a long book. The header absorbs the iOS safe
+     area so it stays clear of the notch when stuck at top. */
+  #viewReader .app { padding-top: 0; }
   .reader-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 22px 12px;
+    padding: calc(14px + env(safe-area-inset-top)) 22px 12px;
     border-bottom: 1px solid var(--rule);
     gap: 12px;
   }
