@@ -560,6 +560,34 @@
     color: var(--ink);
     outline: none;
   }
+  .upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    flex-wrap: wrap;
+  }
+  .upload-label {
+    display: inline-block;
+    cursor: pointer;
+  }
+  .upload-row input[type="file"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    opacity: 0;
+  }
+  .upload-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+    flex: 1;
+    min-width: 0;
+  }
+  .upload-status.error { color: var(--accent); }
   textarea {
     min-height: 200px;
     flex: 1;
@@ -850,9 +878,14 @@
 <div class="modal-backdrop" id="addBookModal">
   <div class="modal">
     <h3>Add a book</h3>
-    <p>Give it a title, then paste the full text. Saved to this device.</p>
+    <p>Give it a title and paste the text, or upload a file (.epub, .txt, .html). Saved to this device.</p>
     <input class="title-input" id="bookTitleInput" placeholder="Title (e.g. Anna Karenina)" />
-    <textarea id="bookTextInput" placeholder="Paste the book's text here…"></textarea>
+    <div class="upload-row">
+      <label class="btn upload-label" for="bookFileInput">Upload file…</label>
+      <input type="file" id="bookFileInput" accept=".txt,.text,.md,.markdown,.html,.htm,.xhtml,.epub" />
+      <span class="upload-status" id="uploadStatus"></span>
+    </div>
+    <textarea id="bookTextInput" placeholder="…or paste the text here."></textarea>
     <div class="modal-actions">
       <button class="btn" id="cancelAddBook">Cancel</button>
       <button class="btn primary" id="saveBook">Save</button>
@@ -984,6 +1017,302 @@
       chapters.push({ title: text, sentenceIndex: i });
     }
     return chapters;
+  }
+
+  // Given a list of chapter titles (in order) and the parsed sentences,
+  // locate the sentence index each title starts at. Used when an EPUB's
+  // TOC gives us real chapter names that aren't a heuristic-matchable
+  // pattern. Returns [{title, sentenceIndex}, ...].
+  function locateChapters(sentences, titles) {
+    const result = [];
+    let searchFrom = 0;
+    for (const raw of titles) {
+      if (!raw) continue;
+      const title = raw.trim();
+      if (!title) continue;
+      const needle = title.toLowerCase();
+      const shortNeedle = needle.slice(0, Math.min(needle.length, 40));
+      for (let i = searchFrom; i < sentences.length; i++) {
+        const s = sentences[i].text.trim().toLowerCase();
+        const matches =
+          s === needle ||
+          s.startsWith(needle) ||
+          (s.length < 120 && s.startsWith(shortNeedle));
+        if (matches) {
+          result.push({ title, sentenceIndex: i });
+          searchFrom = i + 1;
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
+  // ============================================================
+  //  File upload: .txt / .md / .html / .epub
+  // ============================================================
+  const BLOCK_TAGS = new Set(['P','DIV','H1','H2','H3','H4','H5','H6','LI','UL','OL',
+                              'BLOCKQUOTE','PRE','SECTION','ARTICLE','HEADER','FOOTER',
+                              'ASIDE','NAV','MAIN','BR','HR','TR','TD','TH',
+                              'FIGURE','FIGCAPTION','DT','DD']);
+
+  function blockText(node) {
+    let out = '';
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) {            // text node
+        out += child.textContent;
+      } else if (child.nodeType === 1) {     // element
+        const tag = child.tagName.toUpperCase();
+        if (tag === 'BR') { out += '\n'; continue; }
+        if (tag === 'HR') { out += '\n\n'; continue; }
+        const isBlock = BLOCK_TAGS.has(tag);
+        if (isBlock) out += '\n\n';
+        out += blockText(child);
+        if (isBlock) out += '\n\n';
+      }
+    }
+    return out;
+  }
+
+  function extractTextFromHtml(html) {
+    let doc;
+    try {
+      doc = new DOMParser().parseFromString(html, 'text/html');
+    } catch (e) { return ''; }
+    doc.querySelectorAll('script, style').forEach(el => el.remove());
+    const body = doc.body || doc.documentElement;
+    if (!body) return '';
+    return blockText(body)
+      .replace(/[ \t]+/g, ' ')
+      .replace(/ ?\n ?/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  // Resolve an EPUB-internal relative href against the path of the file
+  // it appeared in (basePath). Normalizes ./ and ../ segments.
+  function resolveZipPath(basePath, relativeHref) {
+    if (!relativeHref) return '';
+    const baseDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/') + 1) : '';
+    const combined = baseDir + relativeHref;
+    const parts = combined.split('/');
+    const out = [];
+    for (const p of parts) {
+      if (p === '..') out.pop();
+      else if (p !== '.' && p !== '') out.push(p);
+    }
+    return out.join('/');
+  }
+
+  let jszipPromise = null;
+  function loadJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (jszipPromise) return jszipPromise;
+    jszipPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+      s.async = true;
+      s.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error('JSZip loaded but window.JSZip is undefined.'));
+      s.onerror = () => reject(new Error('Could not load the EPUB reader (JSZip). Check your internet connection and try again.'));
+      document.head.appendChild(s);
+    });
+    return jszipPromise;
+  }
+
+  async function readEpub(file) {
+    const JSZip = await loadJSZip();
+    const buf = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+
+    // DRM check — Adobe Adept, Apple FairPlay, etc. all leave an
+    // encryption.xml here.
+    if (zip.file('META-INF/encryption.xml')) {
+      throw new Error('This EPUB is DRM-protected and can\'t be read here. Try a DRM-free source like Project Gutenberg, Standard Ebooks, or Smashwords.');
+    }
+
+    // 1. container.xml → OPF path
+    const containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) throw new Error('Not a valid EPUB (missing META-INF/container.xml).');
+    const containerXml = await containerFile.async('text');
+    const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
+    const rootfile = containerDoc.querySelector('rootfile');
+    if (!rootfile) throw new Error('Not a valid EPUB (no rootfile in container.xml).');
+    const opfPath = rootfile.getAttribute('full-path');
+    if (!opfPath) throw new Error('Not a valid EPUB (rootfile has no full-path).');
+
+    // 2. Parse OPF
+    const opfFile = zip.file(opfPath);
+    if (!opfFile) throw new Error('OPF file not found at ' + opfPath);
+    const opfXml = await opfFile.async('text');
+    const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml');
+
+    // Title from <dc:title>
+    let epubTitle = null;
+    const titleEls = opfDoc.getElementsByTagName('dc:title');
+    if (titleEls.length && titleEls[0].textContent) {
+      epubTitle = titleEls[0].textContent.trim();
+    } else {
+      const altTitle = opfDoc.querySelector('metadata > title');
+      if (altTitle) epubTitle = altTitle.textContent.trim();
+    }
+
+    // Manifest: id → { path, mediaType, properties }
+    const manifest = {};
+    opfDoc.querySelectorAll('manifest item').forEach(item => {
+      const id = item.getAttribute('id');
+      const href = item.getAttribute('href');
+      if (!id || !href) return;
+      manifest[id] = {
+        path: resolveZipPath(opfPath, href),
+        mediaType: item.getAttribute('media-type') || '',
+        properties: item.getAttribute('properties') || '',
+      };
+    });
+
+    // Spine: ordered list of idrefs
+    const spineEl = opfDoc.querySelector('spine');
+    const spineIds = spineEl
+      ? Array.from(spineEl.querySelectorAll('itemref')).map(r => r.getAttribute('idref'))
+      : [];
+
+    // 3. TOC — prefer EPUB3 nav doc, fall back to EPUB2 NCX
+    const tocEntries = []; // [{ title, path }]
+    const navEntry = Object.values(manifest)
+      .find(m => m.properties.split(/\s+/).includes('nav'));
+    if (navEntry) {
+      const navFile = zip.file(navEntry.path);
+      if (navFile) {
+        const navContent = await navFile.async('text');
+        const navDoc = new DOMParser().parseFromString(navContent, 'application/xml');
+        const navs = navDoc.querySelectorAll('nav');
+        let targetNav = null;
+        for (const n of navs) {
+          const t = n.getAttribute('epub:type') ||
+                    n.getAttributeNS('http://www.idpf.org/2007/ops', 'type') ||
+                    n.getAttribute('type');
+          if (t === 'toc') { targetNav = n; break; }
+        }
+        if (!targetNav && navs.length) targetNav = navs[0];
+        if (targetNav) {
+          targetNav.querySelectorAll('a').forEach(a => {
+            const href = (a.getAttribute('href') || '').split('#')[0];
+            if (!href) return;
+            const title = (a.textContent || '').trim();
+            if (!title) return;
+            tocEntries.push({ title, path: resolveZipPath(navEntry.path, href) });
+          });
+        }
+      }
+    } else {
+      const ncxAttr = spineEl ? spineEl.getAttribute('toc') : null;
+      let ncxMeta = (ncxAttr && manifest[ncxAttr]) ? manifest[ncxAttr] : null;
+      if (!ncxMeta) ncxMeta = Object.values(manifest).find(m => m.mediaType.includes('ncx'));
+      if (ncxMeta) {
+        const ncxFile = zip.file(ncxMeta.path);
+        if (ncxFile) {
+          const ncxContent = await ncxFile.async('text');
+          const ncxDoc = new DOMParser().parseFromString(ncxContent, 'application/xml');
+          ncxDoc.querySelectorAll('navMap navPoint').forEach(p => {
+            const label = p.querySelector('navLabel > text') || p.querySelector('navLabel text');
+            const content = p.querySelector('content');
+            if (!label || !content) return;
+            const href = (content.getAttribute('src') || '').split('#')[0];
+            const title = (label.textContent || '').trim();
+            if (!href || !title) return;
+            tocEntries.push({ title, path: resolveZipPath(ncxMeta.path, href) });
+          });
+        }
+      }
+    }
+
+    // 4. Concatenate spine items as text, prepending TOC titles when
+    //    the chapter's content doesn't already start with them.
+    const textParts = [];
+    const chapterTitles = [];
+    for (const id of spineIds) {
+      const item = manifest[id];
+      if (!item) continue;
+      const mt = item.mediaType.toLowerCase();
+      if (!mt.includes('html') && !mt.includes('xml') && !mt.includes('xhtml')) continue;
+      const sectionFile = zip.file(item.path);
+      if (!sectionFile) continue;
+      const html = await sectionFile.async('text');
+      const sectionText = extractTextFromHtml(html);
+      if (!sectionText.trim()) continue;
+      const tocEntry = tocEntries.find(t => t.path === item.path);
+      if (tocEntry && tocEntry.title) {
+        const head = sectionText.trim().slice(0, 200).toLowerCase();
+        const tLow = tocEntry.title.toLowerCase();
+        const shortT = tLow.slice(0, Math.min(tLow.length, 25));
+        const alreadyHasTitle = head.startsWith(tLow) || head.startsWith(shortT);
+        if (alreadyHasTitle) {
+          textParts.push(sectionText.trim());
+        } else {
+          textParts.push(tocEntry.title + '\n\n' + sectionText.trim());
+        }
+        chapterTitles.push(tocEntry.title);
+      } else {
+        textParts.push(sectionText.trim());
+      }
+    }
+
+    const text = textParts.join('\n\n');
+    if (!text.trim()) throw new Error('EPUB parsed, but no readable text was found inside.');
+    return { text, chapters: chapterTitles, title: epubTitle };
+  }
+
+  // Pending chapter titles set by handleFileUpload, consumed by
+  // saveBookAction to compute book.chapters. Reset on modal open/close
+  // and on save.
+  let pendingChapterTitles = null;
+
+  function setUploadStatus(text, isError) {
+    const el = document.getElementById('uploadStatus');
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('error', !!isError);
+  }
+
+  function fileBaseName(name) {
+    return name.replace(/\.(txt|text|md|markdown|html|htm|xhtml|epub)$/i, '');
+  }
+
+  async function handleFileUpload(file) {
+    if (!file) return;
+    const name = file.name || 'file';
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    pendingChapterTitles = null;
+    setUploadStatus('Reading ' + name + '…');
+    try {
+      let extracted;
+      if (ext === 'epub') {
+        extracted = await readEpub(file);
+      } else if (ext === 'html' || ext === 'htm' || ext === 'xhtml') {
+        const text = await file.text();
+        extracted = { text: extractTextFromHtml(text), chapters: null, title: null };
+      } else {
+        extracted = { text: await file.text(), chapters: null, title: null };
+      }
+      if (!extracted.text || !extracted.text.trim()) {
+        throw new Error('No readable text was found in this file.');
+      }
+      const titleInput = document.getElementById('bookTitleInput');
+      const textInput = document.getElementById('bookTextInput');
+      textInput.value = extracted.text;
+      if (!titleInput.value.trim()) {
+        titleInput.value = (extracted.title && extracted.title.trim())
+          ? extracted.title.trim()
+          : fileBaseName(name);
+      }
+      pendingChapterTitles = (extracted.chapters && extracted.chapters.length)
+        ? extracted.chapters : null;
+      const kb = Math.round(extracted.text.length / 1000);
+      const chapMsg = pendingChapterTitles ? (' · ' + pendingChapterTitles.length + ' chapters') : '';
+      setUploadStatus('Loaded · ' + kb + 'k chars' + chapMsg, false);
+    } catch (err) {
+      console.error('File upload failed:', err);
+      setUploadStatus(err && err.message ? err.message : String(err), true);
+    }
   }
 
   // ============================================================
@@ -1297,7 +1626,11 @@
     const book = await getBook(bookId);
     if (!book) return;
     const sentences = splitSentences(book.text);
-    const chapters = detectChapters(sentences);
+    // Prefer chapters stored with the book (from an EPUB's TOC).
+    // Fall back to heuristic detection for pasted text and plain files.
+    const chapters = (book.chapters && book.chapters.length)
+      ? book.chapters
+      : detectChapters(sentences);
     const favorites = await getFavoritesForBook(bookId);
     const prog = await getProgress(bookId);
     state.book = book;
@@ -1796,10 +2129,18 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   function openAddBookModal() {
     bookTitleInput.value = '';
     bookTextInput.value = '';
+    pendingChapterTitles = null;
+    setUploadStatus('', false);
+    const fileInput = document.getElementById('bookFileInput');
+    if (fileInput) fileInput.value = '';
     addBookModal.classList.add('open');
     setTimeout(() => bookTitleInput.focus(), 50);
   }
-  function closeAddBookModal() { addBookModal.classList.remove('open'); }
+  function closeAddBookModal() {
+    addBookModal.classList.remove('open');
+    pendingChapterTitles = null;
+    setUploadStatus('', false);
+  }
   function openQuickReadModal() {
     quickTextInput.value = '';
     quickReadModal.classList.add('open');
@@ -1811,13 +2152,17 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     const title = bookTitleInput.value.trim();
     const text = bookTextInput.value.trim();
     if (!title) { alert('Give the book a title.'); bookTitleInput.focus(); return; }
-    if (!text) { alert('Paste some text first.'); bookTextInput.focus(); return; }
+    if (!text) { alert('Paste some text or upload a file first.'); bookTextInput.focus(); return; }
     const sentences = splitSentences(text);
+    const chapters = (pendingChapterTitles && pendingChapterTitles.length)
+      ? locateChapters(sentences, pendingChapterTitles)
+      : null;
     const book = {
       id: uuid(),
       title,
       text,
       sentenceCount: sentences.length,
+      chapters,
       createdAt: Date.now(),
       lastReadAt: Date.now(),
     };
@@ -1829,6 +2174,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
             "\n\nTip: this storage backend may not work inside an embedded preview. Try the deployed site in a regular browser tab.");
       return;
     }
+    pendingChapterTitles = null;
     closeAddBookModal();
     try {
       await openBook(book.id);
@@ -1917,6 +2263,10 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   $('#cancelAddBook').addEventListener('click', closeAddBookModal);
   $('#saveBook').addEventListener('click', saveBookAction);
   addBookModal.addEventListener('click', e => { if (e.target === addBookModal) closeAddBookModal(); });
+  $('#bookFileInput').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) handleFileUpload(f);
+  });
 
   // Quick read modal
   $('#cancelQuick').addEventListener('click', closeQuickReadModal);
