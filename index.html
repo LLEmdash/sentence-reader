@@ -974,7 +974,18 @@
 
   function openDb() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      if (typeof indexedDB === 'undefined' || !indexedDB) {
+        reject(new Error('IndexedDB is not available in this browser context. Books cannot be saved here. Try opening the deployed URL in a regular browser tab.'));
+        return;
+      }
+      let req;
+      try {
+        req = indexedDB.open(DB_NAME, DB_VERSION);
+      } catch (e) {
+        reject(new Error('Could not open IndexedDB: ' + (e && e.message ? e.message : e)));
+        return;
+      }
+      req.onblocked = () => reject(new Error('IndexedDB open was blocked. Close other tabs of this app and try again.'));
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('books')) {
@@ -1199,7 +1210,20 @@
   //  Library rendering
   // ============================================================
   async function renderLibrary() {
-    const books = await getAllBooks();
+    let books;
+    try {
+      books = await getAllBooks();
+    } catch (err) {
+      console.error('Library load failed:', err);
+      bookListEl.innerHTML = '';
+      libEmpty.hidden = false;
+      libEmpty.innerHTML =
+        '<h3>Storage unavailable</h3>' +
+        '<p>This browser context blocks IndexedDB, so the library can\'t load or save books. ' +
+        'Open the app at <strong>sentence-reader.vercel.app</strong> in a regular browser tab — ' +
+        'it works there. Quick Read still works here.</p>';
+      return;
+    }
     books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
     bookListEl.innerHTML = '';
     libEmpty.hidden = books.length > 0;
@@ -1773,9 +1797,21 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
       createdAt: Date.now(),
       lastReadAt: Date.now(),
     };
-    await putBook(book);
+    try {
+      await putBook(book);
+    } catch (err) {
+      console.error('Save book failed:', err);
+      alert("Couldn't save the book.\n\n" + (err && err.message ? err.message : err) +
+            "\n\nTip: this storage backend may not work inside an embedded preview. Try the deployed site in a regular browser tab.");
+      return;
+    }
     closeAddBookModal();
-    await openBook(book.id);
+    try {
+      await openBook(book.id);
+    } catch (err) {
+      console.error('Open book failed:', err);
+      alert("Saved, but couldn't open the book: " + (err && err.message ? err.message : err));
+    }
   }
 
   // ============================================================
