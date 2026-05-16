@@ -271,13 +271,13 @@
   /* Reader area */
   .reader-wrap {
     overflow-x: hidden;
-    padding: 28px 22px 220px;
+    padding: 28px 22px 180px;
     scroll-behavior: smooth;
   }
   .reader {
     font-family: 'Newsreader', Georgia, serif;
-    font-size: 22px;
-    line-height: 1.65;
+    font-size: var(--reader-fs, 22px);
+    line-height: 1.6;
     font-weight: 400;
     letter-spacing: 0.005em;
   }
@@ -287,10 +287,10 @@
     padding: 1px 1px;
     border-radius: 2px;
     cursor: pointer;
-    /* Reserve space at top (for nav) and bottom (for fixed controls) so
-       scrollIntoView keeps the highlighted sentence clear of overlays. */
-    scroll-margin-top: 80px;
-    scroll-margin-bottom: 220px;
+    /* Reserve space at top (for sticky header) and bottom (for fixed controls)
+       so scrollIntoView keeps the highlighted sentence clear of overlays. */
+    scroll-margin-top: 90px;
+    scroll-margin-bottom: 180px;
   }
   .reader .sent.active {
     color: var(--ink);
@@ -332,13 +332,14 @@
   .empty .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
   /* ===== Control bar (reader bottom) ===== */
+  /* Slimmed: just progress + stats + transport. WPM moved into settings. */
   .controls {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, var(--paper) 70%, rgba(243,236,224,0));
-    padding: 24px 22px calc(20px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--paper) 75%, rgba(243,236,224,0));
+    padding: 18px 22px calc(14px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
   .controls > * { pointer-events: auto; }
@@ -346,7 +347,7 @@
   .progress {
     height: 2px;
     background: var(--very-faded);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     overflow: hidden;
   }
   .progress .bar {
@@ -355,12 +356,16 @@
     width: 0%;
     transition: width 120ms linear;
   }
+  /* Three-column grid keeps the transport centered with stats on the left
+     and an empty slot on the right balancing it. */
   .control-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     gap: 14px;
   }
+  .control-row > .stats { justify-self: start; }
+  .control-row > .transport { justify-self: center; }
   .transport { display: flex; align-items: center; gap: 6px; }
   .icon-btn {
     width: 44px;
@@ -790,12 +795,19 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8M19 5v14"/></svg>
             </button>
           </div>
-          <div class="wpm-control">
-            <input type="range" id="wpm" min="100" max="800" step="10" value="300">
-            <span><span class="wpm-value" id="wpmVal">300</span> wpm</span>
-          </div>
+          <div></div>
         </div>
         <div class="settings" id="settingsPanel">
+          <div class="setting">
+            <span>WPM</span>
+            <input type="range" id="wpm" min="100" max="800" step="10" value="300">
+            <span><span class="wpm-value" id="wpmVal">300</span></span>
+          </div>
+          <div class="setting">
+            <span>Text size</span>
+            <input type="number" id="fontSize" value="22" min="14" max="34" step="1">
+            <span>px</span>
+          </div>
           <div class="setting">
             <span>Min ms per sentence</span>
             <input type="number" id="minMs" value="700" min="0" max="5000" step="50">
@@ -1094,6 +1106,7 @@
   const SETTINGS_KEY = 'sr.settings';
   const DEFAULT_SETTINGS = {
     wpm: 300, minMs: 700, pauseMs: 120, paraPauseMs: 600, autoScroll: true,
+    fontSize: 22,
   };
   function loadSettings() {
     try {
@@ -1107,6 +1120,7 @@
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         wpm: s.wpm, minMs: s.minMs, pauseMs: s.pauseMs,
         paraPauseMs: s.paraPauseMs, autoScroll: s.autoScroll,
+        fontSize: s.fontSize,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1149,6 +1163,7 @@
     pauseMs: settings.pauseMs,
     paraPauseMs: settings.paraPauseMs,
     autoScroll: settings.autoScroll,
+    fontSize: settings.fontSize,
     timer: null,
     progressRaf: null,
     saveTimer: null,
@@ -1179,6 +1194,7 @@
   const pauseMsInput = $('#pauseMs');
   const paraPauseMsInput = $('#paraPauseMs');
   const autoScrollInput = $('#autoScroll');
+  const fontSizeInput = $('#fontSize');
   const stats = $('#stats');
   const bar = $('#bar');
   const readerBookTitle = $('#readerBookTitle');
@@ -1825,6 +1841,11 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   // ============================================================
   //  Settings panel sync
   // ============================================================
+  function applyFontSize() {
+    const px = Math.max(12, Math.min(40, state.fontSize || 22));
+    document.documentElement.style.setProperty('--reader-fs', px + 'px');
+  }
+
   function reflectSettingsToUI() {
     wpmInput.value = state.wpm;
     wpmVal.textContent = state.wpm;
@@ -1832,6 +1853,8 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     pauseMsInput.value = state.pauseMs;
     paraPauseMsInput.value = state.paraPauseMs;
     autoScrollInput.checked = state.autoScroll;
+    fontSizeInput.value = state.fontSize;
+    applyFontSize();
   }
 
   // ============================================================
@@ -1871,6 +1894,14 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   });
   autoScrollInput.addEventListener('change', e => {
     state.autoScroll = e.target.checked;
+    saveSettings(state);
+  });
+  fontSizeInput.addEventListener('change', e => {
+    const v = parseInt(e.target.value, 10);
+    if (!Number.isFinite(v)) return;
+    state.fontSize = Math.max(12, Math.min(40, v));
+    fontSizeInput.value = state.fontSize;
+    applyFontSize();
     saveSettings(state);
   });
 
