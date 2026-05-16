@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#f3ece0" />
 <title>Sentence Reader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,13 +45,18 @@
     padding: env(safe-area-inset-top) 0 0;
   }
 
-  /* Header */
+  /* ===== View switching ===== */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ===== Brand / header ===== */
   .header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     padding: 18px 22px 14px;
     border-bottom: 1px solid var(--rule);
+    gap: 12px;
   }
   .brand {
     font-family: 'Instrument Serif', serif;
@@ -68,67 +74,14 @@
     text-transform: uppercase;
   }
 
-  /* Reader area */
-  .reader-wrap {
-    overflow-x: hidden;
-    padding: 28px 22px 200px;
-    scroll-behavior: smooth;
-  }
-  .reader {
-    font-family: 'Newsreader', Georgia, serif;
-    font-size: 22px;
-    line-height: 1.65;
-    font-weight: 400;
-    letter-spacing: 0.005em;
-  }
-  .reader .sent {
-    color: var(--faded);
-    transition: color 280ms ease, background-color 280ms ease, box-shadow 280ms ease;
-    padding: 1px 1px;
-    border-radius: 2px;
-    cursor: pointer;
-    /* Reserve space at top (for nav) and bottom (for fixed controls)
-       so scrollIntoView keeps the highlighted sentence clear of overlays. */
-    scroll-margin-top: 80px;
-    scroll-margin-bottom: 200px;
-  }
-  .reader .sent.active {
-    color: var(--ink);
-    background-color: var(--highlight);
-    box-shadow:
-      0 0 0 2px var(--highlight),
-      0 1px 0 var(--highlight-soft);
-  }
-  .reader .sent.read {
-    color: var(--ink-soft);
-  }
-  .reader .sent:hover:not(.active) {
-    color: var(--ink-soft);
-  }
-  .reader p { margin: 0 0 1.1em; }
-
-  /* Empty state */
-  .empty {
+  .top-actions {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--ink-soft);
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
-  .empty h2 {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-weight: 400;
-    font-size: 32px;
-    margin: 0 0 8px;
-    color: var(--ink);
-  }
-  .empty p { font-size: 17px; margin: 0 0 24px; max-width: 380px; line-height: 1.5; }
-  .empty .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
-  /* Buttons */
+  /* ===== Buttons ===== */
   button {
     font-family: inherit;
     cursor: pointer;
@@ -151,8 +104,226 @@
   .btn:hover { background: var(--ink); color: var(--paper); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
   .btn.primary:hover { background: var(--ink); border-color: var(--ink); }
+  .btn.danger:hover { background: var(--accent); border-color: var(--accent); color: var(--paper); }
 
-  /* Control bar */
+  .tiny-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    background: transparent;
+  }
+  .tiny-btn:hover { color: var(--ink); border-color: var(--ink); }
+  .tiny-btn.on { color: var(--accent); border-color: var(--accent); }
+
+  /* ===== Library view ===== */
+  .lib-intro {
+    padding: 30px 22px 10px;
+  }
+  .lib-intro h2 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 36px;
+    margin: 0 0 4px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .lib-intro p {
+    margin: 0;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  .book-list {
+    padding: 14px 22px 24px;
+  }
+  .book-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .book-row:hover { background: rgba(216,201,164,0.18); }
+  .book-row .book-main { flex: 1; min-width: 0; }
+  .book-row .book-title {
+    font-family: 'Newsreader', serif;
+    font-size: 22px;
+    line-height: 1.25;
+    color: var(--ink);
+    margin: 0 0 6px;
+    word-break: break-word;
+  }
+  .book-row .book-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .book-row .book-meta .sep { color: var(--faded); }
+  .book-row .mini-bar {
+    margin-top: 8px;
+    height: 2px;
+    background: var(--very-faded);
+    width: 140px;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .book-row .mini-bar > div {
+    height: 100%;
+    background: var(--accent);
+    transition: width 200ms ease;
+  }
+  .book-row .row-delete {
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--faded);
+    padding: 4px 8px;
+    margin-top: -2px;
+    line-height: 1;
+  }
+  .book-row .row-delete:hover { color: var(--accent); }
+
+  .lib-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 40px 22px 20px;
+    color: var(--ink-soft);
+  }
+  .lib-empty h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 28px;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .lib-empty p { margin: 0 0 18px; font-size: 16px; max-width: 360px; line-height: 1.5; }
+
+  .lib-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 14px 22px 60px;
+  }
+
+  /* ===== Reader view ===== */
+  .reader-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px 12px;
+    border-bottom: 1px solid var(--rule);
+    gap: 12px;
+  }
+  .reader-header .back-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    padding: 6px 10px 6px 0;
+    flex-shrink: 0;
+  }
+  .reader-header .back-btn:hover { color: var(--ink); }
+  .reader-header .book-title-mini {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 6px;
+  }
+  .reader-header .right-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* Reader area */
+  .reader-wrap {
+    overflow-x: hidden;
+    padding: 28px 22px 220px;
+    scroll-behavior: smooth;
+  }
+  .reader {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 22px;
+    line-height: 1.65;
+    font-weight: 400;
+    letter-spacing: 0.005em;
+  }
+  .reader .sent {
+    color: var(--faded);
+    transition: color 280ms ease, background-color 280ms ease, box-shadow 280ms ease;
+    padding: 1px 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    /* Reserve space at top (for nav) and bottom (for fixed controls) so
+       scrollIntoView keeps the highlighted sentence clear of overlays. */
+    scroll-margin-top: 80px;
+    scroll-margin-bottom: 220px;
+  }
+  .reader .sent.active {
+    color: var(--ink);
+    background-color: var(--highlight);
+    box-shadow:
+      0 0 0 2px var(--highlight),
+      0 1px 0 var(--highlight-soft);
+  }
+  .reader .sent.read { color: var(--ink-soft); }
+  .reader .sent.fav::after {
+    content: '★';
+    font-size: 0.7em;
+    color: var(--accent);
+    margin-left: 2px;
+    vertical-align: super;
+  }
+  .reader .sent:hover:not(.active) { color: var(--ink-soft); }
+  .reader p { margin: 0 0 1.1em; }
+
+  /* Empty (quick read view before paste) */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--ink-soft);
+  }
+  .empty h2 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 32px;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .empty p { font-size: 17px; margin: 0 0 24px; max-width: 380px; line-height: 1.5; }
+  .empty .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* ===== Control bar (reader bottom) ===== */
   .controls {
     position: fixed;
     bottom: 0;
@@ -163,11 +334,7 @@
     pointer-events: none;
   }
   .controls > * { pointer-events: auto; }
-  .controls-inner {
-    max-width: 720px;
-    margin: 0 auto;
-  }
-
+  .controls-inner { max-width: 720px; margin: 0 auto; }
   .progress {
     height: 2px;
     background: var(--very-faded);
@@ -180,18 +347,13 @@
     width: 0%;
     transition: width 120ms linear;
   }
-
   .control-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 14px;
   }
-  .transport {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  .transport { display: flex; align-items: center; gap: 6px; }
   .icon-btn {
     width: 44px;
     height: 44px;
@@ -258,67 +420,6 @@
     border: 2px solid var(--paper);
   }
 
-  /* Modal */
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(28,22,13,0.45);
-    display: none;
-    align-items: flex-end;
-    justify-content: center;
-    z-index: 100;
-    padding: 0;
-  }
-  @media (min-width: 600px) {
-    .modal-backdrop { align-items: center; padding: 24px; }
-  }
-  .modal-backdrop.open { display: flex; }
-  .modal {
-    background: var(--paper);
-    width: 100%;
-    max-width: 600px;
-    padding: 22px;
-    border-top: 3px solid var(--ink);
-    max-height: 88vh;
-    display: flex;
-    flex-direction: column;
-  }
-  @media (min-width: 600px) { .modal { border: 3px solid var(--ink); } }
-  .modal h3 {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-weight: 400;
-    margin: 0 0 4px;
-    font-size: 28px;
-    color: var(--ink);
-  }
-  .modal p {
-    margin: 0 0 16px;
-    color: var(--ink-soft);
-    font-size: 15px;
-  }
-  textarea {
-    width: 100%;
-    min-height: 220px;
-    flex: 1;
-    background: #fbf6ea;
-    border: 1px solid var(--rule);
-    padding: 14px;
-    font-family: 'Newsreader', serif;
-    font-size: 16px;
-    line-height: 1.55;
-    color: var(--ink);
-    resize: vertical;
-    outline: none;
-  }
-  textarea:focus { border-color: var(--ink); }
-  .modal-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 14px;
-    justify-content: flex-end;
-  }
-
   /* Settings drawer */
   .settings {
     border-top: 1px solid var(--rule);
@@ -347,143 +448,483 @@
   }
   .setting input[type="number"]:focus { border-color: var(--ink); }
 
-  .top-actions {
-    display: flex;
-    gap: 8px;
+  /* ===== Favorites view ===== */
+  .fav-view {
+    padding: 0 22px 80px;
   }
-  .tiny-btn {
+  .fav-view .fav-book-group {
+    margin-top: 24px;
+  }
+  .fav-view .fav-book-title {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 22px;
+    color: var(--ink);
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .fav-item {
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--rule);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .fav-item:hover { background: rgba(216,201,164,0.18); }
+  .fav-item .fav-text {
+    font-family: 'Newsreader', serif;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    flex: 1;
+  }
+  .fav-item .fav-remove {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--faded);
+    padding: 2px 6px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .fav-item .fav-remove:hover { color: var(--accent); }
+  .fav-empty {
+    text-align: center;
+    padding: 60px 22px;
+    color: var(--ink-soft);
+  }
+  .fav-empty p { font-size: 16px; }
+
+  /* ===== Modals ===== */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(28,22,13,0.45);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 100;
+    padding: 0;
+  }
+  @media (min-width: 600px) {
+    .modal-backdrop { align-items: center; padding: 24px; }
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--paper);
+    width: 100%;
+    max-width: 600px;
+    padding: 22px;
+    border-top: 3px solid var(--ink);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  @media (min-width: 600px) { .modal { border: 3px solid var(--ink); } }
+  .modal h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    margin: 0 0 4px;
+    font-size: 28px;
+    color: var(--ink);
+  }
+  .modal p {
+    margin: 0 0 16px;
+    color: var(--ink-soft);
+    font-size: 15px;
+  }
+  textarea, .title-input {
+    width: 100%;
+    background: #fbf6ea;
+    border: 1px solid var(--rule);
+    padding: 14px;
+    font-family: 'Newsreader', serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink);
+    outline: none;
+  }
+  textarea {
+    min-height: 200px;
+    flex: 1;
+    resize: vertical;
+  }
+  .title-input {
+    margin-bottom: 12px;
+    font-size: 20px;
+  }
+  textarea:focus, .title-input:focus { border-color: var(--ink); }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  /* Navigator panel (a modal styled as a bottom sheet w/ sections) */
+  .nav-modal { max-height: 92vh; }
+  .nav-section {
+    border-top: 1px solid var(--rule);
+    padding: 16px 0;
+  }
+  .nav-section:first-of-type { border-top: none; padding-top: 4px; }
+  .nav-section h4 {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 6px 10px;
-    border: 1px solid var(--rule);
+    letter-spacing: 0.1em;
     color: var(--ink-soft);
-    background: transparent;
+    margin: 0 0 10px;
   }
-  .tiny-btn:hover { color: var(--ink); border-color: var(--ink); }
+  .nav-current {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink);
+    line-height: 1.5;
+    background: var(--highlight-soft);
+    padding: 10px 12px;
+    border-left: 3px solid var(--highlight);
+    max-height: 110px;
+    overflow-y: auto;
+  }
+  .nav-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    letter-spacing: 0.04em;
+  }
 
-  /* No-scrollbar reading area */
+  .nav-search-input {
+    width: 100%;
+    background: #fbf6ea;
+    border: 1px solid var(--rule);
+    padding: 10px 12px;
+    font-family: 'Newsreader', serif;
+    font-size: 15px;
+    color: var(--ink);
+    outline: none;
+  }
+  .nav-search-input:focus { border-color: var(--ink); }
+  .nav-results {
+    margin-top: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .nav-result {
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--rule);
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .nav-result:hover { background: rgba(216,201,164,0.18); }
+  .nav-result .nav-idx {
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--faded);
+    min-width: 36px;
+    padding-top: 2px;
+  }
+  .nav-result .nav-snippet {
+    flex: 1;
+    font-family: 'Newsreader', serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  .nav-result .hit { background: var(--highlight); color: var(--ink); }
+
+  .nav-chapter, .nav-fav {
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--rule);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .nav-chapter:hover, .nav-fav:hover { background: rgba(216,201,164,0.18); }
+  .nav-chapter .chap-title, .nav-fav .fav-snippet {
+    font-family: 'Newsreader', serif;
+    font-size: 15px;
+    color: var(--ink);
+    flex: 1;
+  }
+  .nav-chapter .chap-idx, .nav-fav .fav-idx {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--faded);
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .nav-empty-section {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 14px;
+    padding: 4px 0;
+  }
+
+  .scrubber-wrap input[type="range"] {
+    width: 100%;
+  }
+  .scrub-preview {
+    margin-top: 10px;
+    font-family: 'Newsreader', serif;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: #fbf6ea;
+    padding: 10px 12px;
+    border: 1px solid var(--rule);
+    min-height: 60px;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .scrub-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+  .scrub-jump-btn {
+    margin-top: 8px;
+  }
+
+  /* Scrollbar styling */
   body::-webkit-scrollbar { width: 6px; }
   body::-webkit-scrollbar-thumb { background: var(--very-faded); }
   body::-webkit-scrollbar-track { background: transparent; }
 
-  /* Selection */
   ::selection { background: var(--highlight); color: var(--ink); }
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="header">
-    <div class="brand">Sentence<span class="dot">.</span> Reader</div>
-    <div class="top-actions">
-      <button class="tiny-btn" id="settingsBtn">Settings</button>
-      <button class="tiny-btn" id="newTextBtn">New Text</button>
-    </div>
-  </header>
 
-  <main class="reader-wrap" id="readerWrap">
-    <div id="reader" class="reader"></div>
-    <div class="empty" id="emptyState">
-      <h2>One sentence at a time.</h2>
-      <p>Paste any text and it gets highlighted sentence by sentence, with each one held just long enough to read at your chosen pace.</p>
-      <div class="actions">
-        <button class="btn primary" id="pasteBtn">Paste Text</button>
-        <button class="btn" id="sampleBtn">Try a Sample</button>
+<!-- ===== Library view (default) ===== -->
+<section class="view active" id="viewLibrary">
+  <div class="app">
+    <header class="header">
+      <div class="brand">Sentence<span class="dot">.</span> Reader</div>
+      <div class="top-actions">
+        <button class="tiny-btn" id="favoritesBtn">Favorites</button>
       </div>
-    </div>
-  </main>
+    </header>
 
-  <div class="controls">
-    <div class="controls-inner">
-      <div class="progress"><div class="bar" id="bar"></div></div>
-      <div class="control-row">
-        <div class="stats" id="stats">— / —</div>
-        <div class="transport">
-          <button class="icon-btn" id="prevBtn" aria-label="Previous sentence">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20L9 12l10-8M5 19V5"/></svg>
-          </button>
-          <button class="icon-btn play" id="playBtn" aria-label="Play">
-            <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-          </button>
-          <button class="icon-btn" id="nextBtn" aria-label="Next sentence">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8M19 5v14"/></svg>
-          </button>
-        </div>
-        <div class="wpm-control">
-          <input type="range" id="wpm" min="100" max="800" step="10" value="300">
-          <span><span class="wpm-value" id="wpmVal">300</span> wpm</span>
+    <div class="lib-intro">
+      <h2>Library</h2>
+      <p>Your saved books. Tap one to resume where you left off.</p>
+    </div>
+
+    <div class="book-list" id="bookList"></div>
+
+    <div class="lib-empty" id="libEmpty" hidden>
+      <h3>No books yet.</h3>
+      <p>Add your first book to start. Or paste a short piece for a quick read without saving.</p>
+    </div>
+
+    <div class="lib-actions">
+      <button class="btn primary" id="addBookBtn">+ Add Book</button>
+      <button class="btn" id="quickReadBtn">Quick Read</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Reader view ===== -->
+<section class="view" id="viewReader">
+  <div class="app">
+    <header class="reader-header">
+      <button class="back-btn" id="readerBack">← Library</button>
+      <div class="book-title-mini" id="readerBookTitle">—</div>
+      <div class="right-actions">
+        <button class="tiny-btn" id="favStarBtn" aria-label="Favorite current sentence">☆</button>
+        <button class="tiny-btn" id="navBtn">Nav</button>
+        <button class="tiny-btn" id="settingsBtn">Set</button>
+      </div>
+    </header>
+
+    <main class="reader-wrap" id="readerWrap">
+      <div id="reader" class="reader"></div>
+      <div class="empty" id="emptyState" hidden>
+        <h2>One sentence at a time.</h2>
+        <p>Paste any text and it gets highlighted sentence by sentence, with each one held just long enough to read at your chosen pace.</p>
+        <div class="actions">
+          <button class="btn primary" id="emptyPasteBtn">Paste Text</button>
+          <button class="btn" id="emptySampleBtn">Try a Sample</button>
         </div>
       </div>
-      <div class="settings" id="settingsPanel">
-        <div class="setting">
-          <span>Min ms per sentence</span>
-          <input type="number" id="minMs" value="700" min="0" max="5000" step="50">
+    </main>
+
+    <div class="controls">
+      <div class="controls-inner">
+        <div class="progress"><div class="bar" id="bar"></div></div>
+        <div class="control-row">
+          <div class="stats" id="stats">— / —</div>
+          <div class="transport">
+            <button class="icon-btn" id="prevBtn" aria-label="Previous sentence">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20L9 12l10-8M5 19V5"/></svg>
+            </button>
+            <button class="icon-btn play" id="playBtn" aria-label="Play">
+              <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="icon-btn" id="nextBtn" aria-label="Next sentence">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8M19 5v14"/></svg>
+            </button>
+          </div>
+          <div class="wpm-control">
+            <input type="range" id="wpm" min="100" max="800" step="10" value="300">
+            <span><span class="wpm-value" id="wpmVal">300</span> wpm</span>
+          </div>
         </div>
-        <div class="setting">
-          <span>Extra pause after period (ms)</span>
-          <input type="number" id="pauseMs" value="120" min="0" max="2000" step="20">
-        </div>
-        <div class="setting">
-          <span>Pause between paragraphs (ms)</span>
-          <input type="number" id="paraPauseMs" value="600" min="0" max="5000" step="50">
-        </div>
-        <div class="setting">
-          <span>Auto-scroll</span>
-          <input type="checkbox" id="autoScroll" checked>
+        <div class="settings" id="settingsPanel">
+          <div class="setting">
+            <span>Min ms per sentence</span>
+            <input type="number" id="minMs" value="700" min="0" max="5000" step="50">
+          </div>
+          <div class="setting">
+            <span>Extra pause after period (ms)</span>
+            <input type="number" id="pauseMs" value="120" min="0" max="2000" step="20">
+          </div>
+          <div class="setting">
+            <span>Pause between paragraphs (ms)</span>
+            <input type="number" id="paraPauseMs" value="600" min="0" max="5000" step="50">
+          </div>
+          <div class="setting">
+            <span>Auto-scroll</span>
+            <input type="checkbox" id="autoScroll" checked>
+          </div>
         </div>
       </div>
     </div>
   </div>
+</section>
+
+<!-- ===== Favorites view ===== -->
+<section class="view" id="viewFavorites">
+  <div class="app">
+    <header class="reader-header">
+      <button class="back-btn" id="favBack">← Library</button>
+      <div class="book-title-mini">Favorites</div>
+      <div class="right-actions" style="visibility: hidden;">
+        <button class="tiny-btn">·</button>
+      </div>
+    </header>
+    <div class="fav-view" id="favView"></div>
+  </div>
+</section>
+
+<!-- ===== Modals ===== -->
+
+<!-- Add book modal -->
+<div class="modal-backdrop" id="addBookModal">
+  <div class="modal">
+    <h3>Add a book</h3>
+    <p>Give it a title, then paste the full text. Saved to this device.</p>
+    <input class="title-input" id="bookTitleInput" placeholder="Title (e.g. Anna Karenina)" />
+    <textarea id="bookTextInput" placeholder="Paste the book's text here…"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="cancelAddBook">Cancel</button>
+      <button class="btn primary" id="saveBook">Save</button>
+    </div>
+  </div>
 </div>
 
-<div class="modal-backdrop" id="modalBackdrop">
+<!-- Quick read modal -->
+<div class="modal-backdrop" id="quickReadModal">
   <div class="modal">
-    <h3>Paste your text</h3>
-    <p>Articles, essays, book chapters — anything. The longer the better.</p>
-    <textarea id="textInput" placeholder="Paste here…"></textarea>
+    <h3>Quick read</h3>
+    <p>Paste something to read once. Nothing saved.</p>
+    <textarea id="quickTextInput" placeholder="Paste here…"></textarea>
     <div class="modal-actions">
-      <button class="btn" id="cancelModal">Cancel</button>
-      <button class="btn primary" id="loadText">Load</button>
+      <button class="btn" id="cancelQuick">Cancel</button>
+      <button class="btn" id="quickSample">Try a Sample</button>
+      <button class="btn primary" id="loadQuick">Load</button>
+    </div>
+  </div>
+</div>
+
+<!-- Navigator modal -->
+<div class="modal-backdrop" id="navModal">
+  <div class="modal nav-modal">
+    <h3>Navigator</h3>
+    <p id="navProgress">—</p>
+
+    <div class="nav-section">
+      <h4>You're here</h4>
+      <div class="nav-current" id="navCurrent">—</div>
+      <div class="nav-meta" id="navMeta">—</div>
+    </div>
+
+    <div class="nav-section">
+      <h4>Find a phrase</h4>
+      <input class="nav-search-input" id="navSearch" placeholder="Type a phrase you remember reading…" />
+      <div class="nav-results" id="navResults"></div>
+    </div>
+
+    <div class="nav-section">
+      <h4>Chapters</h4>
+      <div id="navChapters"></div>
+    </div>
+
+    <div class="nav-section">
+      <h4>Favorites in this book</h4>
+      <div id="navFavorites"></div>
+    </div>
+
+    <div class="nav-section scrubber-wrap">
+      <h4>Scrub through</h4>
+      <input type="range" id="scrubber" min="0" max="0" value="0" step="1" />
+      <div class="scrub-meta" id="scrubMeta">—</div>
+      <div class="scrub-preview" id="scrubPreview">—</div>
+      <button class="btn primary scrub-jump-btn" id="scrubJump">Jump to this spot</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="closeNav">Close</button>
     </div>
   </div>
 </div>
 
 <script>
 (() => {
-  // ---- Sentence splitting ----
-  // Pragmatic regex split: handles common abbreviations and ellipses.
+  'use strict';
+
+  // ============================================================
+  //  Sentence splitting (pragmatic regex; handles abbreviations,
+  //  decimals, ellipses, paragraph breaks).
+  // ============================================================
   const ABBREVS = ['Mr','Mrs','Ms','Mx','Dr','Jr','Sr','St','Prof','Inc','Ltd','Co',
                    'etc','vs','approx','dept','Capt','Lt','Sgt','Gen','Rev','Hon',
                    'e.g','i.e','U.S','U.K','a.m','p.m','No'];
 
   function splitSentences(text) {
     if (!text) return [];
-    // Normalize whitespace; keep paragraph breaks as a marker.
     let t = text.replace(/\r\n/g, '\n');
-
-    // Protect abbreviations: replace their period with a token.
     let protectedText = t;
     ABBREVS.forEach(a => {
       const re = new RegExp('\\b' + a.replace(/\./g, '\\.') + '\\.', 'g');
       protectedText = protectedText.replace(re, a.replace(/\./g, '§') + '§');
     });
-    // Protect decimals (e.g. 3.14)
     protectedText = protectedText.replace(/(\d)\.(\d)/g, '$1§$2');
-    // Protect ellipses
     protectedText = protectedText.replace(/\.{3,}/g, '⟦ELLIPSIS⟧');
 
-    // Split on sentence boundaries: . ! ? followed by whitespace and (capital letter | quote | digit | dash).
-    // Also split on double newline as a paragraph boundary.
     const parts = [];
     const paragraphs = protectedText.split(/\n{2,}/);
     paragraphs.forEach((para, pIdx) => {
       const sentences = para.split(/(?<=[.!?])["')\]]?\s+(?=["'(\[]?[A-Z0-9—–-])/);
       sentences.forEach(s => {
-        const cleaned = s
-          .replace(/⟦ELLIPSIS⟧/g, '...')
-          .replace(/§/g, '.')
-          .trim();
+        const cleaned = s.replace(/⟦ELLIPSIS⟧/g, '...').replace(/§/g, '.').trim();
         if (cleaned.length) parts.push({ text: cleaned, paragraphBreakAfter: false });
       });
       if (parts.length && pIdx < paragraphs.length - 1) {
@@ -498,24 +939,214 @@
     return m ? m.length : 1;
   }
 
-  // ---- State ----
+  // ============================================================
+  //  Chapter detection
+  // ============================================================
+  const CHAPTER_PATTERNS = [
+    /^(chapter|part|book|section)\b/i,
+    /^(prologue|epilogue|introduction|preface|foreword|afterword|conclusion|appendix)\b/i,
+    /^[IVXLCDM]{1,5}\.?$/,           // pure roman numerals
+    /^\d{1,3}\.?$/,                   // pure numeric
+  ];
+
+  function detectChapters(sentences) {
+    const chapters = [];
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      const text = s.text.trim();
+      if (text.length === 0 || text.length > 80) continue;
+      const matches = CHAPTER_PATTERNS.some(p => p.test(text));
+      if (!matches) continue;
+      // Require chapter heading to start its own paragraph: either first sentence,
+      // or previous sentence ends a paragraph.
+      const isParagraphStart = i === 0 || sentences[i - 1].paragraphBreakAfter;
+      if (!isParagraphStart) continue;
+      chapters.push({ title: text, sentenceIndex: i });
+    }
+    return chapters;
+  }
+
+  // ============================================================
+  //  IndexedDB layer
+  // ============================================================
+  const DB_NAME = 'sentence-reader';
+  const DB_VERSION = 1;
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('books')) {
+          const s = db.createObjectStore('books', { keyPath: 'id' });
+          s.createIndex('lastReadAt', 'lastReadAt');
+        }
+        if (!db.objectStoreNames.contains('progress')) {
+          db.createObjectStore('progress', { keyPath: 'bookId' });
+        }
+        if (!db.objectStoreNames.contains('favorites')) {
+          const s = db.createObjectStore('favorites', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('bookId', 'bookId');
+          s.createIndex('bookSentence', ['bookId', 'sentenceIndex'], { unique: false });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  let dbPromise = null;
+  function db() {
+    if (!dbPromise) dbPromise = openDb();
+    return dbPromise;
+  }
+  function reqP(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function withStore(storeName, mode, fn) {
+    const d = await db();
+    return new Promise((resolve, reject) => {
+      const tx = d.transaction(storeName, mode);
+      const store = tx.objectStore(storeName);
+      let result;
+      Promise.resolve(fn(store)).then(r => { result = r; }).catch(reject);
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  function uuid() {
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'b-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  // Books
+  async function getAllBooks() {
+    return withStore('books', 'readonly', s => reqP(s.getAll()));
+  }
+  async function getBook(id) {
+    return withStore('books', 'readonly', s => reqP(s.get(id)));
+  }
+  async function putBook(book) {
+    return withStore('books', 'readwrite', s => reqP(s.put(book)));
+  }
+  async function deleteBookRecord(id) {
+    return withStore('books', 'readwrite', s => reqP(s.delete(id)));
+  }
+
+  // Progress
+  async function getProgress(bookId) {
+    return withStore('progress', 'readonly', s => reqP(s.get(bookId)));
+  }
+  async function putProgress(rec) {
+    return withStore('progress', 'readwrite', s => reqP(s.put(rec)));
+  }
+  async function deleteProgress(bookId) {
+    return withStore('progress', 'readwrite', s => reqP(s.delete(bookId)));
+  }
+
+  // Favorites
+  async function getFavoritesForBook(bookId) {
+    return withStore('favorites', 'readonly', s => reqP(s.index('bookId').getAll(bookId)));
+  }
+  async function getAllFavorites() {
+    return withStore('favorites', 'readonly', s => reqP(s.getAll()));
+  }
+  async function addFavorite(fav) {
+    return withStore('favorites', 'readwrite', s => reqP(s.add(fav)));
+  }
+  async function removeFavorite(id) {
+    return withStore('favorites', 'readwrite', s => reqP(s.delete(id)));
+  }
+  async function deleteFavoritesForBook(bookId) {
+    return withStore('favorites', 'readwrite', async s => {
+      const all = await reqP(s.index('bookId').getAllKeys(bookId));
+      for (const k of all) await reqP(s.delete(k));
+    });
+  }
+
+  // ============================================================
+  //  Global settings (localStorage)
+  // ============================================================
+  const SETTINGS_KEY = 'sr.settings';
+  const DEFAULT_SETTINGS = {
+    wpm: 300, minMs: 700, pauseMs: 120, paraPauseMs: 600, autoScroll: true,
+  };
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return { ...DEFAULT_SETTINGS };
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch (e) { return { ...DEFAULT_SETTINGS }; }
+  }
+  function saveSettings(s) {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        wpm: s.wpm, minMs: s.minMs, pauseMs: s.pauseMs,
+        paraPauseMs: s.paraPauseMs, autoScroll: s.autoScroll,
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  // ============================================================
+  //  Time formatting
+  // ============================================================
+  function timeAgo(ts) {
+    if (!ts) return '—';
+    const now = Date.now();
+    const s = Math.max(0, Math.floor((now - ts) / 1000));
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + (m === 1 ? ' min ago' : ' mins ago');
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    const d = Math.floor(h / 24);
+    if (d < 30) return d + (d === 1 ? ' day ago' : ' days ago');
+    const mo = Math.floor(d / 30);
+    if (mo < 12) return mo + (mo === 1 ? ' month ago' : ' months ago');
+    const y = Math.floor(mo / 12);
+    return y + (y === 1 ? ' year ago' : ' years ago');
+  }
+
+  // ============================================================
+  //  State
+  // ============================================================
+  const settings = loadSettings();
   const state = {
+    view: 'library',           // 'library' | 'reader' | 'favorites'
+    book: null,                // current book record (or null in quick read)
+    isQuickRead: false,
     sentences: [],
+    chapters: [],
+    favorites: [],             // favorites for the current book
     idx: 0,
     playing: false,
-    wpm: 300,
-    minMs: 700,
-    pauseMs: 120,
-    paraPauseMs: 600,
-    autoScroll: true,
+    wpm: settings.wpm,
+    minMs: settings.minMs,
+    pauseMs: settings.pauseMs,
+    paraPauseMs: settings.paraPauseMs,
+    autoScroll: settings.autoScroll,
     timer: null,
-    startTime: 0,
-    plannedDuration: 0,
     progressRaf: null,
+    saveTimer: null,
   };
 
-  // ---- DOM ----
+  // ============================================================
+  //  DOM refs
+  // ============================================================
   const $ = sel => document.querySelector(sel);
+  // Views
+  const viewLibrary = $('#viewLibrary');
+  const viewReader = $('#viewReader');
+  const viewFavorites = $('#viewFavorites');
+  // Library
+  const bookListEl = $('#bookList');
+  const libEmpty = $('#libEmpty');
+  // Reader
   const reader = $('#reader');
   const readerWrap = $('#readerWrap');
   const emptyState = $('#emptyState');
@@ -531,28 +1162,172 @@
   const autoScrollInput = $('#autoScroll');
   const stats = $('#stats');
   const bar = $('#bar');
-  const modal = $('#modalBackdrop');
-  const textInput = $('#textInput');
+  const readerBookTitle = $('#readerBookTitle');
+  const favStarBtn = $('#favStarBtn');
+  // Modals
+  const addBookModal = $('#addBookModal');
+  const bookTitleInput = $('#bookTitleInput');
+  const bookTextInput = $('#bookTextInput');
+  const quickReadModal = $('#quickReadModal');
+  const quickTextInput = $('#quickTextInput');
+  const navModal = $('#navModal');
+  const navProgress = $('#navProgress');
+  const navCurrent = $('#navCurrent');
+  const navMeta = $('#navMeta');
+  const navSearch = $('#navSearch');
+  const navResults = $('#navResults');
+  const navChapters = $('#navChapters');
+  const navFavorites = $('#navFavorites');
+  const scrubber = $('#scrubber');
+  const scrubMeta = $('#scrubMeta');
+  const scrubPreview = $('#scrubPreview');
+  // Favorites view
+  const favView = $('#favView');
 
-  // ---- Rendering ----
+  // ============================================================
+  //  View routing
+  // ============================================================
+  function showView(name) {
+    state.view = name;
+    viewLibrary.classList.toggle('active', name === 'library');
+    viewReader.classList.toggle('active', name === 'reader');
+    viewFavorites.classList.toggle('active', name === 'favorites');
+    window.scrollTo(0, 0);
+  }
+
+  // ============================================================
+  //  Library rendering
+  // ============================================================
+  async function renderLibrary() {
+    const books = await getAllBooks();
+    books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
+    bookListEl.innerHTML = '';
+    libEmpty.hidden = books.length > 0;
+    for (const b of books) {
+      const prog = await getProgress(b.id);
+      const total = b.sentenceCount || 1;
+      const curIdx = prog ? prog.currentIndex : 0;
+      const pct = total > 0 ? Math.round((curIdx / Math.max(1, total - 1)) * 100) : 0;
+
+      const row = document.createElement('div');
+      row.className = 'book-row';
+      row.innerHTML =
+        '<div class="book-main">' +
+          '<div class="book-title"></div>' +
+          '<div class="book-meta">' +
+            '<span class="pct"></span>' +
+            '<span class="sep">·</span>' +
+            '<span class="last"></span>' +
+          '</div>' +
+          '<div class="mini-bar"><div></div></div>' +
+        '</div>' +
+        '<button class="row-delete" title="Delete book" aria-label="Delete book">✕</button>';
+      row.querySelector('.book-title').textContent = b.title;
+      row.querySelector('.pct').textContent = pct + '% read';
+      row.querySelector('.last').textContent = b.lastReadAt ? timeAgo(b.lastReadAt) : 'never opened';
+      row.querySelector('.mini-bar > div').style.width = pct + '%';
+      row.addEventListener('click', e => {
+        if (e.target.closest('.row-delete')) return;
+        openBook(b.id);
+      });
+      row.querySelector('.row-delete').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Delete "' + b.title + '" and all its progress and favorites?')) return;
+        await deleteProgress(b.id);
+        await deleteFavoritesForBook(b.id);
+        await deleteBookRecord(b.id);
+        renderLibrary();
+      });
+      bookListEl.appendChild(row);
+    }
+  }
+
+  // ============================================================
+  //  Opening a book / quick read
+  // ============================================================
+  async function openBook(bookId) {
+    const book = await getBook(bookId);
+    if (!book) return;
+    const sentences = splitSentences(book.text);
+    const chapters = detectChapters(sentences);
+    const favorites = await getFavoritesForBook(bookId);
+    const prog = await getProgress(bookId);
+    state.book = book;
+    state.isQuickRead = false;
+    state.sentences = sentences;
+    state.chapters = chapters;
+    state.favorites = favorites;
+    state.idx = Math.max(0, Math.min(sentences.length - 1, prog ? prog.currentIndex : 0));
+    state.playing = false;
+    readerBookTitle.textContent = book.title;
+    emptyState.hidden = true;
+
+    book.lastReadAt = Date.now();
+    if (!book.sentenceCount) book.sentenceCount = sentences.length;
+    await putBook(book);
+
+    bar.style.width = '0%';
+    setPlayIcon(false);
+    showView('reader');
+    render();
+  }
+
+  function startQuickRead(text) {
+    state.book = null;
+    state.isQuickRead = true;
+    state.sentences = splitSentences(text);
+    state.chapters = detectChapters(state.sentences);
+    state.favorites = [];
+    state.idx = 0;
+    state.playing = false;
+    readerBookTitle.textContent = 'Quick read';
+    emptyState.hidden = state.sentences.length > 0;
+    bar.style.width = '0%';
+    setPlayIcon(false);
+    showView('reader');
+    render();
+  }
+
+  function closeBookToLibrary() {
+    pause();
+    saveProgressNow();
+    state.book = null;
+    state.isQuickRead = false;
+    state.sentences = [];
+    state.chapters = [];
+    state.favorites = [];
+    state.idx = 0;
+    renderLibrary();
+    showView('library');
+  }
+
+  // ============================================================
+  //  Reader rendering
+  // ============================================================
+  function favSetFor(idx) {
+    return state.favorites.some(f => f.sentenceIndex === idx);
+  }
+
   function render() {
     if (!state.sentences.length) {
       reader.innerHTML = '';
-      emptyState.style.display = 'flex';
+      emptyState.hidden = false;
       stats.textContent = '— / —';
       return;
     }
-    emptyState.style.display = 'none';
+    emptyState.hidden = true;
     const frag = document.createDocumentFragment();
     let currentP = document.createElement('p');
     state.sentences.forEach((s, i) => {
       const span = document.createElement('span');
-      span.className = 'sent' + (i === state.idx ? ' active' : (i < state.idx ? ' read' : ''));
+      let cls = 'sent';
+      if (i === state.idx) cls += ' active';
+      else if (i < state.idx) cls += ' read';
+      if (favSetFor(i)) cls += ' fav';
+      span.className = cls;
       span.textContent = s.text;
       span.dataset.idx = i;
-      span.addEventListener('click', () => {
-        goTo(i);
-      });
+      span.addEventListener('click', () => goTo(i));
       currentP.appendChild(span);
       currentP.appendChild(document.createTextNode(' '));
       if (s.paragraphBreakAfter) {
@@ -564,6 +1339,7 @@
     reader.innerHTML = '';
     reader.appendChild(frag);
     updateStats();
+    updateFavStar();
     if (state.autoScroll) scrollActiveIntoView();
   }
 
@@ -574,22 +1350,33 @@
       sp.classList.toggle('read', i < state.idx);
     });
     updateStats();
+    updateFavStar();
     if (state.autoScroll) scrollActiveIntoView();
+    schedProgressSave();
   }
 
   function updateStats() {
     if (!state.sentences.length) { stats.textContent = '— / —'; return; }
-    stats.textContent = `${String(state.idx + 1).padStart(2,'0')} / ${String(state.sentences.length).padStart(2,'0')}`;
+    stats.textContent = String(state.idx + 1).padStart(2, '0') + ' / ' +
+                        String(state.sentences.length).padStart(2, '0');
+  }
+
+  function updateFavStar() {
+    if (state.isQuickRead) {
+      favStarBtn.style.visibility = 'hidden';
+      return;
+    }
+    favStarBtn.style.visibility = 'visible';
+    const isFav = favSetFor(state.idx);
+    favStarBtn.textContent = isFav ? '★' : '☆';
+    favStarBtn.classList.toggle('on', isFav);
   }
 
   function scrollActiveIntoView() {
     const active = reader.querySelector('.sent.active');
     if (!active) return;
-    // scrollIntoView is the most iframe/webview-friendly scroll method:
-    // it propagates up through nested scroll containers (including iframe
-    // boundaries) so it works even when the parent page is the actual
-    // scrolling element. 'nearest' avoids jitter by only scrolling when
-    // the sentence isn't already visible (accounting for scroll-margin).
+    // scrollIntoView is iframe/webview friendly — propagates across nested
+    // scroll containers. Don't use window.scrollTo here.
     try {
       active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     } catch (e) {
@@ -597,20 +1384,20 @@
     }
   }
 
-  // ---- Timing ----
+  // ============================================================
+  //  Timing / playback
+  // ============================================================
   function durationFor(sentence) {
     const words = countWords(sentence.text);
     const base = (words / state.wpm) * 60 * 1000;
     const extra = state.pauseMs + (sentence.paragraphBreakAfter ? state.paraPauseMs : 0);
     return Math.max(state.minMs, base) + extra;
   }
-
   function startProgress(duration) {
     cancelAnimationFrame(state.progressRaf);
-    state.startTime = performance.now();
-    state.plannedDuration = duration;
+    const startTime = performance.now();
     const tick = (now) => {
-      const elapsed = now - state.startTime;
+      const elapsed = now - startTime;
       const pct = Math.min(100, (elapsed / duration) * 100);
       bar.style.width = pct + '%';
       if (state.playing && elapsed < duration) {
@@ -619,15 +1406,11 @@
     };
     state.progressRaf = requestAnimationFrame(tick);
   }
-
-  function stopProgress() {
-    cancelAnimationFrame(state.progressRaf);
-  }
-
+  function stopProgress() { cancelAnimationFrame(state.progressRaf); }
   function scheduleNext() {
     clearTimeout(state.timer);
     if (!state.playing) return;
-    if (state.idx >= state.sentences.length) { stop(); return; }
+    if (state.idx >= state.sentences.length) { pause(); return; }
     const dur = durationFor(state.sentences[state.idx]);
     startProgress(dur);
     state.timer = setTimeout(() => {
@@ -636,30 +1419,28 @@
         updateActiveOnly();
         scheduleNext();
       } else {
-        stop();
+        pause();
         bar.style.width = '100%';
       }
     }, dur);
   }
-
+  function setPlayIcon(playing) {
+    if (playing) playIcon.innerHTML = '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>';
+    else playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+  }
   function play() {
     if (!state.sentences.length) return;
     state.playing = true;
-    playIcon.innerHTML = '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>';
+    setPlayIcon(true);
     scheduleNext();
   }
   function pause() {
     state.playing = false;
     clearTimeout(state.timer);
     stopProgress();
-    playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+    setPlayIcon(false);
   }
-  function stop() {
-    pause();
-  }
-  function togglePlay() {
-    if (state.playing) pause(); else play();
-  }
+  function togglePlay() { if (state.playing) pause(); else play(); }
   function goTo(i) {
     const wasPlaying = state.playing;
     pause();
@@ -668,19 +1449,291 @@
     updateActiveOnly();
     if (wasPlaying) play();
   }
-  function next() { goTo(state.idx + 1); }
-  function prev() { goTo(state.idx - 1); }
+  function nextS() { goTo(state.idx + 1); }
+  function prevS() { goTo(state.idx - 1); }
 
-  // ---- Load text ----
-  function loadText(text) {
-    pause();
-    state.sentences = splitSentences(text);
-    state.idx = 0;
-    bar.style.width = '0%';
-    render();
+  // ============================================================
+  //  Progress auto-save (debounced)
+  // ============================================================
+  function schedProgressSave() {
+    if (state.isQuickRead || !state.book) return;
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(saveProgressNow, 500);
+  }
+  async function saveProgressNow() {
+    if (state.isQuickRead || !state.book) return;
+    clearTimeout(state.saveTimer);
+    try {
+      await putProgress({
+        bookId: state.book.id,
+        currentIndex: state.idx,
+        updatedAt: Date.now(),
+      });
+      // Also update lastReadAt on the book record (cheap, occasional)
+      state.book.lastReadAt = Date.now();
+      await putBook(state.book);
+    } catch (e) { console.warn('Progress save failed', e); }
   }
 
-  // ---- Sample ----
+  // ============================================================
+  //  Favorites
+  // ============================================================
+  async function toggleCurrentFavorite() {
+    if (state.isQuickRead || !state.book) return;
+    if (!state.sentences.length) return;
+    const idx = state.idx;
+    const existing = state.favorites.find(f => f.sentenceIndex === idx);
+    if (existing) {
+      await removeFavorite(existing.id);
+      state.favorites = state.favorites.filter(f => f.id !== existing.id);
+    } else {
+      const rec = {
+        bookId: state.book.id,
+        sentenceIndex: idx,
+        text: state.sentences[idx].text,
+        createdAt: Date.now(),
+      };
+      const id = await addFavorite(rec);
+      state.favorites.push({ ...rec, id });
+    }
+    // Update visual marker on this sentence without full re-render.
+    const span = reader.querySelector('.sent[data-idx="' + idx + '"]');
+    if (span) span.classList.toggle('fav', favSetFor(idx));
+    updateFavStar();
+  }
+
+  // ============================================================
+  //  Navigator panel
+  // ============================================================
+  function openNav() {
+    if (!state.sentences.length) return;
+    const wasPlaying = state.playing;
+    if (wasPlaying) pause();
+    renderNavCurrent();
+    renderNavChapters();
+    renderNavFavorites();
+    setupScrubber();
+    navSearch.value = '';
+    navResults.innerHTML = '';
+    navModal.classList.add('open');
+  }
+  function closeNav() {
+    navModal.classList.remove('open');
+  }
+
+  function renderNavCurrent() {
+    const total = state.sentences.length;
+    const curIdx = state.idx;
+    const pct = Math.round((curIdx / Math.max(1, total - 1)) * 100);
+    navProgress.textContent = 'Sentence ' + (curIdx + 1) + ' of ' + total + ' · ' + pct + '%';
+    navCurrent.textContent = state.sentences[curIdx]?.text || '—';
+    const ch = currentChapterFor(curIdx);
+    navMeta.textContent = ch ? ('In: ' + ch.title) : 'No chapter detected';
+  }
+
+  function currentChapterFor(idx) {
+    if (!state.chapters.length) return null;
+    let last = null;
+    for (const c of state.chapters) {
+      if (c.sentenceIndex <= idx) last = c;
+      else break;
+    }
+    return last;
+  }
+
+  function renderNavChapters() {
+    navChapters.innerHTML = '';
+    if (!state.chapters.length) {
+      const el = document.createElement('div');
+      el.className = 'nav-empty-section';
+      el.textContent = 'No chapters detected. Auto-detector looks for headings like "Chapter 3", "Part II", "Prologue".';
+      navChapters.appendChild(el);
+      return;
+    }
+    for (const c of state.chapters) {
+      const row = document.createElement('div');
+      row.className = 'nav-chapter';
+      row.innerHTML = '<span class="chap-title"></span><span class="chap-idx"></span>';
+      row.querySelector('.chap-title').textContent = c.title;
+      row.querySelector('.chap-idx').textContent = '#' + (c.sentenceIndex + 1);
+      row.addEventListener('click', () => {
+        closeNav();
+        goTo(c.sentenceIndex);
+      });
+      navChapters.appendChild(row);
+    }
+  }
+
+  function renderNavFavorites() {
+    navFavorites.innerHTML = '';
+    if (state.isQuickRead) {
+      const el = document.createElement('div');
+      el.className = 'nav-empty-section';
+      el.textContent = 'Favorites are only saved for books in your library.';
+      navFavorites.appendChild(el);
+      return;
+    }
+    if (!state.favorites.length) {
+      const el = document.createElement('div');
+      el.className = 'nav-empty-section';
+      el.textContent = 'No favorites yet. Tap the ☆ button in the reader to save the current sentence.';
+      navFavorites.appendChild(el);
+      return;
+    }
+    const sorted = [...state.favorites].sort((a, b) => a.sentenceIndex - b.sentenceIndex);
+    for (const f of sorted) {
+      const row = document.createElement('div');
+      row.className = 'nav-fav';
+      row.innerHTML = '<span class="fav-snippet"></span><span class="fav-idx"></span>';
+      const text = (f.text || '').slice(0, 140) + ((f.text || '').length > 140 ? '…' : '');
+      row.querySelector('.fav-snippet').textContent = text;
+      row.querySelector('.fav-idx').textContent = '#' + (f.sentenceIndex + 1);
+      row.addEventListener('click', () => {
+        closeNav();
+        goTo(f.sentenceIndex);
+      });
+      navFavorites.appendChild(row);
+    }
+  }
+
+  // --- Search ---
+  let searchTimer = null;
+  function onSearchInput() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 140);
+  }
+  function runSearch() {
+    const q = navSearch.value.trim();
+    navResults.innerHTML = '';
+    if (q.length < 2) return;
+    const qLower = q.toLowerCase();
+    const max = 50;
+    let found = 0;
+    for (let i = 0; i < state.sentences.length && found < max; i++) {
+      const text = state.sentences[i].text;
+      const at = text.toLowerCase().indexOf(qLower);
+      if (at === -1) continue;
+      found++;
+      navResults.appendChild(renderSearchResult(i, text, at, q.length));
+    }
+    if (found === 0) {
+      const el = document.createElement('div');
+      el.className = 'nav-empty-section';
+      el.textContent = 'No matches.';
+      navResults.appendChild(el);
+    }
+  }
+  function renderSearchResult(idx, text, at, len) {
+    const row = document.createElement('div');
+    row.className = 'nav-result';
+    const win = 60;
+    const start = Math.max(0, at - win);
+    const end = Math.min(text.length, at + len + win);
+    const before = (start > 0 ? '…' : '') + text.slice(start, at);
+    const match = text.slice(at, at + len);
+    const after = text.slice(at + len, end) + (end < text.length ? '…' : '');
+
+    const idxEl = document.createElement('span');
+    idxEl.className = 'nav-idx';
+    idxEl.textContent = '#' + (idx + 1);
+
+    const snip = document.createElement('span');
+    snip.className = 'nav-snippet';
+    snip.appendChild(document.createTextNode(before));
+    const hit = document.createElement('span');
+    hit.className = 'hit';
+    hit.textContent = match;
+    snip.appendChild(hit);
+    snip.appendChild(document.createTextNode(after));
+
+    row.appendChild(idxEl);
+    row.appendChild(snip);
+    row.addEventListener('click', () => {
+      closeNav();
+      goTo(idx);
+    });
+    return row;
+  }
+
+  // --- Scrubber ---
+  function setupScrubber() {
+    const total = state.sentences.length;
+    scrubber.min = 0;
+    scrubber.max = Math.max(0, total - 1);
+    scrubber.value = state.idx;
+    updateScrubPreview(state.idx);
+  }
+  function updateScrubPreview(i) {
+    const total = state.sentences.length;
+    const pct = total > 1 ? Math.round((i / (total - 1)) * 100) : 0;
+    const ch = currentChapterFor(i);
+    scrubMeta.textContent = 'Sentence ' + (i + 1) + ' of ' + total + ' · ' + pct + '%' +
+                            (ch ? (' · ' + ch.title) : '');
+    scrubPreview.textContent = state.sentences[i]?.text || '—';
+  }
+
+  // ============================================================
+  //  Favorites view (cross-book)
+  // ============================================================
+  async function openFavoritesView() {
+    favView.innerHTML = '';
+    const all = await getAllFavorites();
+    if (!all.length) {
+      const el = document.createElement('div');
+      el.className = 'fav-empty';
+      el.innerHTML = '<p>No favorites saved yet.<br>Open a book and tap ☆ on a sentence to save it.</p>';
+      favView.appendChild(el);
+      showView('favorites');
+      return;
+    }
+    const byBook = new Map();
+    for (const f of all) {
+      if (!byBook.has(f.bookId)) byBook.set(f.bookId, []);
+      byBook.get(f.bookId).push(f);
+    }
+    // Resolve book titles
+    for (const [bookId, favs] of byBook.entries()) {
+      const book = await getBook(bookId);
+      const title = book ? book.title : '(deleted book)';
+      const group = document.createElement('div');
+      group.className = 'fav-book-group';
+      const h = document.createElement('h3');
+      h.className = 'fav-book-title';
+      h.textContent = title;
+      group.appendChild(h);
+      const sorted = [...favs].sort((a, b) => a.sentenceIndex - b.sentenceIndex);
+      for (const f of sorted) {
+        const row = document.createElement('div');
+        row.className = 'fav-item';
+        const textEl = document.createElement('div');
+        textEl.className = 'fav-text';
+        textEl.textContent = f.text;
+        const rm = document.createElement('button');
+        rm.className = 'fav-remove';
+        rm.textContent = '✕';
+        rm.title = 'Remove favorite';
+        rm.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await removeFavorite(f.id);
+          openFavoritesView();
+        });
+        row.appendChild(textEl);
+        row.appendChild(rm);
+        row.addEventListener('click', async () => {
+          if (!book) return;
+          await openBook(bookId);
+          goTo(f.sentenceIndex);
+        });
+        group.appendChild(row);
+      }
+      favView.appendChild(group);
+    }
+    showView('favorites');
+  }
+
+  // ============================================================
+  //  Sample text
+  // ============================================================
   const SAMPLE = `The trick to reading more is to read faster — but faster how? Most apps flash one word at a time in the middle of your screen. It works, but you lose the shape of the sentence. You lose the rhythm.
 
 Try this instead. The whole sentence sits in front of you, highlighted, held just long enough for your eye to take it in. Then it moves on. A short sentence flashes by. A longer, more involved sentence — the kind with clauses tucked inside other clauses, branching like a small river system — gets the time it deserves.
@@ -689,56 +1742,152 @@ Comprehension comes from rhythm as much as speed. Punctuation is timing. A perio
 
 Adjust the WPM. Skip around. Pause when something lands. The point isn't to race — it's to keep moving when you'd otherwise drift.`;
 
-  // ---- Wire up ----
-  $('#playBtn').addEventListener('click', togglePlay);
-  $('#nextBtn').addEventListener('click', next);
-  $('#prevBtn').addEventListener('click', prev);
+  // ============================================================
+  //  Add book / quick read modal handlers
+  // ============================================================
+  function openAddBookModal() {
+    bookTitleInput.value = '';
+    bookTextInput.value = '';
+    addBookModal.classList.add('open');
+    setTimeout(() => bookTitleInput.focus(), 50);
+  }
+  function closeAddBookModal() { addBookModal.classList.remove('open'); }
+  function openQuickReadModal() {
+    quickTextInput.value = '';
+    quickReadModal.classList.add('open');
+    setTimeout(() => quickTextInput.focus(), 50);
+  }
+  function closeQuickReadModal() { quickReadModal.classList.remove('open'); }
+
+  async function saveBookAction() {
+    const title = bookTitleInput.value.trim();
+    const text = bookTextInput.value.trim();
+    if (!title) { alert('Give the book a title.'); bookTitleInput.focus(); return; }
+    if (!text) { alert('Paste some text first.'); bookTextInput.focus(); return; }
+    const sentences = splitSentences(text);
+    const book = {
+      id: uuid(),
+      title,
+      text,
+      sentenceCount: sentences.length,
+      createdAt: Date.now(),
+      lastReadAt: Date.now(),
+    };
+    await putBook(book);
+    closeAddBookModal();
+    await openBook(book.id);
+  }
+
+  // ============================================================
+  //  Settings panel sync
+  // ============================================================
+  function reflectSettingsToUI() {
+    wpmInput.value = state.wpm;
+    wpmVal.textContent = state.wpm;
+    minMsInput.value = state.minMs;
+    pauseMsInput.value = state.pauseMs;
+    paraPauseMsInput.value = state.paraPauseMs;
+    autoScrollInput.checked = state.autoScroll;
+  }
+
+  // ============================================================
+  //  Event wiring
+  // ============================================================
+  // Library
+  $('#addBookBtn').addEventListener('click', openAddBookModal);
+  $('#quickReadBtn').addEventListener('click', openQuickReadModal);
+  $('#favoritesBtn').addEventListener('click', openFavoritesView);
+
+  // Reader
+  $('#readerBack').addEventListener('click', closeBookToLibrary);
+  $('#favBack').addEventListener('click', () => { showView('library'); renderLibrary(); });
+  playBtn.addEventListener('click', togglePlay);
+  nextBtn.addEventListener('click', nextS);
+  prevBtn.addEventListener('click', prevS);
+  favStarBtn.addEventListener('click', toggleCurrentFavorite);
+  $('#navBtn').addEventListener('click', openNav);
 
   wpmInput.addEventListener('input', e => {
     state.wpm = parseInt(e.target.value, 10);
     wpmVal.textContent = state.wpm;
+    saveSettings(state);
     if (state.playing) { pause(); play(); }
   });
   minMsInput.addEventListener('change', e => {
     state.minMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+    saveSettings(state);
   });
   pauseMsInput.addEventListener('change', e => {
     state.pauseMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+    saveSettings(state);
   });
   paraPauseMsInput.addEventListener('change', e => {
     state.paraPauseMs = Math.max(0, parseInt(e.target.value, 10) || 0);
+    saveSettings(state);
   });
   autoScrollInput.addEventListener('change', e => {
     state.autoScroll = e.target.checked;
+    saveSettings(state);
   });
 
   $('#settingsBtn').addEventListener('click', () => {
     $('#settingsPanel').classList.toggle('open');
   });
 
-  function openModal() { modal.classList.add('open'); setTimeout(() => textInput.focus(), 50); }
-  function closeModal() { modal.classList.remove('open'); }
-  $('#newTextBtn').addEventListener('click', openModal);
-  $('#pasteBtn').addEventListener('click', openModal);
-  $('#cancelModal').addEventListener('click', closeModal);
-  $('#loadText').addEventListener('click', () => {
-    const t = textInput.value.trim();
-    if (t) { loadText(t); closeModal(); }
+  // Empty state (when reader is open with nothing — only in quick read flow)
+  $('#emptyPasteBtn').addEventListener('click', openQuickReadModal);
+  $('#emptySampleBtn').addEventListener('click', () => startQuickRead(SAMPLE));
+
+  // Add book modal
+  $('#cancelAddBook').addEventListener('click', closeAddBookModal);
+  $('#saveBook').addEventListener('click', saveBookAction);
+  addBookModal.addEventListener('click', e => { if (e.target === addBookModal) closeAddBookModal(); });
+
+  // Quick read modal
+  $('#cancelQuick').addEventListener('click', closeQuickReadModal);
+  $('#loadQuick').addEventListener('click', () => {
+    const t = quickTextInput.value.trim();
+    if (!t) return;
+    closeQuickReadModal();
+    startQuickRead(t);
   });
-  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  $('#quickSample').addEventListener('click', () => {
+    closeQuickReadModal();
+    startQuickRead(SAMPLE);
+  });
+  quickReadModal.addEventListener('click', e => { if (e.target === quickReadModal) closeQuickReadModal(); });
 
-  $('#sampleBtn').addEventListener('click', () => loadText(SAMPLE));
+  // Navigator
+  $('#closeNav').addEventListener('click', closeNav);
+  navModal.addEventListener('click', e => { if (e.target === navModal) closeNav(); });
+  navSearch.addEventListener('input', onSearchInput);
+  scrubber.addEventListener('input', e => updateScrubPreview(parseInt(e.target.value, 10)));
+  $('#scrubJump').addEventListener('click', () => {
+    const i = parseInt(scrubber.value, 10);
+    closeNav();
+    goTo(i);
+  });
 
-  // Keyboard
+  // Keyboard shortcuts (only active in reader view, not while typing)
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (state.view !== 'reader') return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    else if (e.code === 'ArrowRight') { next(); }
-    else if (e.code === 'ArrowLeft') { prev(); }
+    else if (e.code === 'ArrowRight') { nextS(); }
+    else if (e.code === 'ArrowLeft') { prevS(); }
   });
 
-  // Initial render
-  render();
+  // Save progress when the page is hidden / unloading (best-effort).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveProgressNow();
+  });
+  window.addEventListener('pagehide', saveProgressNow);
+
+  // ============================================================
+  //  Init
+  // ============================================================
+  reflectSettingsToUI();
+  renderLibrary();
 })();
 </script>
 </body>
