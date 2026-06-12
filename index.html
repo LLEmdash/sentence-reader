@@ -942,10 +942,14 @@
     <h3 id="authTitle">Sign in to sync</h3>
     <p id="authDesc">Sync books, progress, and favorites across your devices. We'll email you a one-click sign-in link — no password to remember.</p>
     <div id="authBody">
+      <div class="modal-actions" style="justify-content: flex-start; margin-top: 0;">
+        <button class="btn primary" id="authGithub">Sign in with GitHub</button>
+      </div>
+      <p class="sync-info" style="margin: 14px 0 6px;">Or sign in by email (limited to a few links per hour on the free tier):</p>
       <input class="title-input" id="authEmail" type="email" placeholder="your@email.com" autocomplete="email" />
       <div class="modal-actions">
         <button class="btn" id="authCancel">Cancel</button>
-        <button class="btn primary" id="authSendLink">Send link</button>
+        <button class="btn" id="authSendLink">Send link</button>
       </div>
     </div>
     <div id="authMsg"></div>
@@ -1590,6 +1594,19 @@
     if (error) throw error;
   }
 
+  async function signInWithGitHub() {
+    await loadSupabase();
+    // Supabase handles the full OAuth dance — it redirects to GitHub,
+    // GitHub redirects back to Supabase, Supabase finally redirects to
+    // our redirectTo. This call returns when the initial redirect has
+    // been initiated; the page is about to navigate away.
+    const { error } = await supaClient.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: window.location.origin + window.location.pathname },
+    });
+    if (error) throw error;
+  }
+
   async function signOut() {
     if (!supaClient) return;
     await supaClient.auth.signOut();
@@ -1813,6 +1830,16 @@
     div.textContent = text;
     msg.appendChild(div);
   }
+  async function handleSignInWithGitHub() {
+    showAuthMessage('Redirecting to GitHub…', false);
+    try {
+      await signInWithGitHub();
+      // signInWithOAuth navigates away; nothing else to do here.
+    } catch (err) {
+      showAuthMessage('GitHub sign-in failed: ' + (err && err.message ? err.message : err), true);
+    }
+  }
+
   async function handleSendMagicLink() {
     const email = document.getElementById('authEmail').value.trim();
     if (!email) { showAuthMessage('Enter your email.', true); return; }
@@ -2626,6 +2653,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   $('#authCancel').addEventListener('click', closeAuthModal);
   $('#authClose').addEventListener('click', closeAuthModal);
   $('#authSendLink').addEventListener('click', handleSendMagicLink);
+  $('#authGithub').addEventListener('click', handleSignInWithGitHub);
   $('#authSignOut').addEventListener('click', handleSignOut);
   $('#authResync').addEventListener('click', handleResync);
   $('#authModal').addEventListener('click', e => { if (e.target.id === 'authModal') closeAuthModal(); });
