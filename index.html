@@ -2049,18 +2049,17 @@
     const book = await getBook(bookId);
     if (!book) return;
     const sentences = splitSentences(book.text);
-    // Start with chapters stored on the book (from an EPUB TOC).
-    // Then augment with heuristic detection — catches chapter headings
-    // the TOC missed, and rescues books saved by the old buggy version
-    // of locateChapters where some TOC chapters never got recorded.
-    const stored = (book.chapters && book.chapters.length) ? book.chapters : [];
-    const detected = detectChapters(sentences);
-    const seenIdx = new Set(stored.map(c => c.sentenceIndex));
-    const chapters = stored.slice();
-    for (const c of detected) {
-      if (!seenIdx.has(c.sentenceIndex)) chapters.push(c);
-    }
-    chapters.sort((a, b) => a.sentenceIndex - b.sentenceIndex);
+    // Stored chapters (from an EPUB's TOC) are authoritative — the
+    // index-counting code in readEpub captures them all with the right
+    // sentence indices. Don't augment with heuristic detection here:
+    // most EPUBs ship a visible Table-of-Contents page early in the
+    // spine, and its literal "Chapter 1 / Chapter 2 / …" text fools the
+    // heuristic into adding bogus chapter entries that all point near
+    // sentence zero. Heuristic detection stays as the fallback for
+    // pasted text, .txt, and .html sources that have no stored TOC.
+    const chapters = (book.chapters && book.chapters.length)
+      ? book.chapters
+      : detectChapters(sentences);
     const favorites = await getFavoritesForBook(bookId);
     const prog = await getProgress(bookId);
     state.book = book;
