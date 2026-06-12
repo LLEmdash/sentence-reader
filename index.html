@@ -789,6 +789,7 @@
       <div class="top-actions">
         <button class="tiny-btn" id="authBtn" title="Cloud sync">Sync off</button>
         <button class="tiny-btn" id="favoritesBtn">Favorites</button>
+        <button class="tiny-btn" id="exportBtn" title="Download a backup of your whole library">Export</button>
       </div>
     </header>
 
@@ -2546,6 +2547,66 @@
   }
 
   // ============================================================
+  //  Export library to JSON (full backup)
+  // ============================================================
+  async function exportLibraryToJson() {
+    let books, favorites;
+    try {
+      books = await getAllBooks();
+      favorites = await getAllFavorites();
+    } catch (err) {
+      alert("Couldn't read the local library.\n\n" + (err && err.message ? err.message : err) +
+            "\n\nIf you're inside a sandboxed preview, try the deployed site instead.");
+      return;
+    }
+    const progressArr = [];
+    for (const b of books) {
+      const p = await getProgress(b.id);
+      if (p) progressArr.push(p);
+    }
+    const payload = {
+      appName: 'Sentence Reader',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      bookCount: books.length,
+      favoriteCount: favorites.length,
+      books: books.map(b => ({
+        id: b.id,
+        title: b.title,
+        text: b.text,
+        chapters: b.chapters || [],
+        sentenceCount: b.sentenceCount || 0,
+        createdAt: b.createdAt || null,
+        lastReadAt: b.lastReadAt || null,
+      })),
+      progress: progressArr.map(p => ({
+        bookId: p.bookId,
+        currentIndex: p.currentIndex,
+        updatedAt: p.updatedAt || null,
+      })),
+      favorites: favorites.map(f => ({
+        bookId: f.bookId,
+        sentenceIndex: f.sentenceIndex,
+        text: f.text,
+        createdAt: f.createdAt || null,
+      })),
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sentence-reader-library-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Free the blob URL on next tick so the browser has time to start the
+    // download. Revoking too eagerly can cause the download to fail on some
+    // browsers (Safari in particular).
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // ============================================================
   //  Sample text
   // ============================================================
   const SAMPLE = `The trick to reading more is to read faster — but faster how? Most apps flash one word at a time in the middle of your screen. It works, but you lose the shape of the sentence. You lose the rhythm.
@@ -2647,6 +2708,12 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   $('#addBookBtn').addEventListener('click', openAddBookModal);
   $('#quickReadBtn').addEventListener('click', openQuickReadModal);
   $('#favoritesBtn').addEventListener('click', openFavoritesView);
+  $('#exportBtn').addEventListener('click', () => {
+    exportLibraryToJson().catch(err => {
+      console.error('Export failed:', err);
+      alert('Export failed: ' + (err && err.message ? err.message : err));
+    });
+  });
   $('#authBtn').addEventListener('click', openAuthModal);
 
   // Auth modal
