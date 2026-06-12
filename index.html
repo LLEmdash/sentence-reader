@@ -743,6 +743,34 @@
     margin-top: 8px;
   }
 
+  /* ===== Auth / sync UI ===== */
+  .tiny-btn.sync-on { color: var(--accent); border-color: var(--accent); }
+  .tiny-btn.sync-syncing { color: var(--ink-soft); }
+  .sync-info {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+    word-break: break-all;
+  }
+  .sync-info strong { color: var(--ink); font-weight: 500; }
+  .auth-msg {
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+    color: var(--ink);
+    background: var(--highlight-soft);
+    border-left: 3px solid var(--highlight);
+    padding: 10px 12px;
+    margin: 10px 0 0;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .auth-msg.error {
+    background: rgba(177,74,44,0.08);
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+
   /* Scrollbar styling */
   body::-webkit-scrollbar { width: 6px; }
   body::-webkit-scrollbar-thumb { background: var(--very-faded); }
@@ -759,6 +787,7 @@
     <header class="header">
       <div class="brand">Sentence<span class="dot">.</span> Reader</div>
       <div class="top-actions">
+        <button class="tiny-btn" id="authBtn" title="Cloud sync">Sync off</button>
         <button class="tiny-btn" id="favoritesBtn">Favorites</button>
       </div>
     </header>
@@ -903,6 +932,31 @@
       <button class="btn" id="cancelQuick">Cancel</button>
       <button class="btn" id="quickSample">Try a Sample</button>
       <button class="btn primary" id="loadQuick">Load</button>
+    </div>
+  </div>
+</div>
+
+<!-- Auth / sync modal -->
+<div class="modal-backdrop" id="authModal">
+  <div class="modal">
+    <h3 id="authTitle">Sign in to sync</h3>
+    <p id="authDesc">Sync books, progress, and favorites across your devices. We'll email you a one-click sign-in link — no password to remember.</p>
+    <div id="authBody">
+      <input class="title-input" id="authEmail" type="email" placeholder="your@email.com" autocomplete="email" />
+      <div class="modal-actions">
+        <button class="btn" id="authCancel">Cancel</button>
+        <button class="btn primary" id="authSendLink">Send link</button>
+      </div>
+    </div>
+    <div id="authMsg"></div>
+    <div id="authSignedIn" style="display:none;">
+      <p class="sync-info">Signed in as <strong id="authEmailDisplay">—</strong></p>
+      <p class="sync-info" id="authSyncStatus">Sync status: —</p>
+      <div class="modal-actions">
+        <button class="btn" id="authClose">Close</button>
+        <button class="btn" id="authResync">Resync now</button>
+        <button class="btn danger" id="authSignOut">Sign out</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1457,6 +1511,360 @@
   }
 
   // ============================================================
+  //  Cloud sync (Supabase)
+  //  Local-first: IndexedDB is always the source the UI reads from.
+  //  Cloud pushes are fire-and-forget background ops when signed in.
+  //  Pulls happen on sign-in (full) and on tab focus (progress only).
+  // ============================================================
+  const SUPABASE_URL = 'https://joxgvydmyqelmjjvbwwx.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpveGd2eWRteXFlbG1qanZid3d4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyODc4MTYsImV4cCI6MjA5Njg2MzgxNn0.D8HJKOlCYlHQZZQHiTLWUZYYZHAFc7LfBnRY4F7TXMM';
+  const SUPABASE_REF = 'joxgvydmyqelmjjvbwwx';
+  const SUPABASE_STORAGE_KEY = 'sb-' + SUPABASE_REF + '-auth-token';
+
+  let supaClient = null;
+  let supaUser = null;
+  let supaSyncState = 'idle'; // 'idle' | 'syncing' | 'synced' | 'error'
+  let supaInitialSyncDone = false;
+
+  function loadSupabase() {
+    if (supaClient) return Promise.resolve(supaClient);
+    if (window.supabase && window.supabase.createClient) {
+      supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      attachAuthListener();
+      return Promise.resolve(supaClient);
+    }
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
+      s.async = true;
+      s.onload = () => {
+        if (!window.supabase || !window.supabase.createClient) {
+          reject(new Error('Supabase SDK loaded but createClient is missing.'));
+          return;
+        }
+        supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        attachAuthListener();
+        resolve(supaClient);
+      };
+      s.onerror = () => reject(new Error('Could not load Supabase SDK. Check internet connection.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  let authListenerAttached = false;
+  function attachAuthListener() {
+    if (authListenerAttached || !supaClient) return;
+    authListenerAttached = true;
+    supaClient.auth.onAuthStateChange((event, session) => {
+      const wasSignedIn = !!supaUser;
+      supaUser = session ? session.user : null;
+      renderAuthUI();
+      if (!wasSignedIn && supaUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        doInitialSync();
+      }
+      if (!supaUser) {
+        supaInitialSyncDone = false;
+        setSyncState('idle');
+      }
+    });
+  }
+
+  function setSyncState(s) {
+    supaSyncState = s;
+    renderAuthUI();
+  }
+
+  async function getSupaSession() {
+    if (!supaClient) await loadSupabase();
+    const { data: { session } } = await supaClient.auth.getSession();
+    supaUser = session ? session.user : null;
+    return supaUser;
+  }
+
+  async function signInWithEmail(email) {
+    await loadSupabase();
+    const { error } = await supaClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname },
+    });
+    if (error) throw error;
+  }
+
+  async function signOut() {
+    if (!supaClient) return;
+    await supaClient.auth.signOut();
+    supaUser = null;
+    supaInitialSyncDone = false;
+    setSyncState('idle');
+  }
+
+  // ----- Cloud push (used after every local write when signed in) -----
+  async function cloudPutBook(book) {
+    if (!supaUser || !supaClient) return;
+    const { error } = await supaClient.from('books').upsert({
+      id: book.id,
+      user_id: supaUser.id,
+      title: book.title,
+      text: book.text,
+      chapters: book.chapters || [],
+      sentence_count: book.sentenceCount || 0,
+      updated_at: new Date(book.lastReadAt || Date.now()).toISOString(),
+    });
+    if (error) throw error;
+  }
+  async function cloudDeleteBook(bookId) {
+    if (!supaUser || !supaClient) return;
+    const { error } = await supaClient.from('books').delete().eq('id', bookId);
+    if (error) throw error;
+  }
+  async function cloudPutProgress(rec) {
+    if (!supaUser || !supaClient) return;
+    const { error } = await supaClient.from('progress').upsert({
+      book_id: rec.bookId,
+      user_id: supaUser.id,
+      current_index: rec.currentIndex,
+      updated_at: new Date(rec.updatedAt || Date.now()).toISOString(),
+    });
+    if (error) throw error;
+  }
+  async function cloudAddFavorite(fav) {
+    if (!supaUser || !supaClient) return;
+    const { error } = await supaClient.from('favorites').upsert({
+      user_id: supaUser.id,
+      book_id: fav.bookId,
+      sentence_index: fav.sentenceIndex,
+      text: fav.text,
+    }, { onConflict: 'user_id,book_id,sentence_index' });
+    if (error) throw error;
+  }
+  async function cloudRemoveFavorite(bookId, sentenceIndex) {
+    if (!supaUser || !supaClient) return;
+    const { error } = await supaClient.from('favorites').delete()
+      .eq('book_id', bookId)
+      .eq('sentence_index', sentenceIndex);
+    if (error) throw error;
+  }
+
+  // Fire-and-forget wrappers — don't block UI on network round-trips.
+  function bgCloudPutBook(book)         { if (supaUser) cloudPutBook(book).catch(e => console.warn('cloud put book failed', e)); }
+  function bgCloudDeleteBook(id)        { if (supaUser) cloudDeleteBook(id).catch(e => console.warn('cloud delete book failed', e)); }
+  function bgCloudPutProgress(rec)      { if (supaUser) cloudPutProgress(rec).catch(e => console.warn('cloud put progress failed', e)); }
+  function bgCloudAddFavorite(fav)      { if (supaUser) cloudAddFavorite(fav).catch(e => console.warn('cloud add fav failed', e)); }
+  function bgCloudRemoveFavorite(b, si) { if (supaUser) cloudRemoveFavorite(b, si).catch(e => console.warn('cloud remove fav failed', e)); }
+
+  // ----- Cloud pull / sync -----
+  async function cloudPullAll() {
+    if (!supaUser || !supaClient) return { books: [], progress: [], favorites: [] };
+    const [bRes, pRes, fRes] = await Promise.all([
+      supaClient.from('books').select('*'),
+      supaClient.from('progress').select('*'),
+      supaClient.from('favorites').select('*'),
+    ]);
+    if (bRes.error) throw bRes.error;
+    if (pRes.error) throw pRes.error;
+    if (fRes.error) throw fRes.error;
+    return {
+      books: bRes.data || [],
+      progress: pRes.data || [],
+      favorites: fRes.data || [],
+    };
+  }
+
+  async function doInitialSync() {
+    if (!supaUser || !supaClient) return;
+    setSyncState('syncing');
+    try {
+      // 1. Push everything local up first so cloud has it.
+      const localBooks = await getAllBooks();
+      for (const b of localBooks) {
+        await cloudPutBook(b);
+        const p = await getProgress(b.id);
+        if (p) await cloudPutProgress(p);
+      }
+      const localFavs = await getAllFavorites();
+      for (const f of localFavs) await cloudAddFavorite(f);
+
+      // 2. Pull cloud and merge anything new into local.
+      const cloud = await cloudPullAll();
+      const localById = new Map(localBooks.map(b => [b.id, b]));
+      for (const cb of cloud.books) {
+        if (!localById.has(cb.id)) {
+          await putBook({
+            id: cb.id,
+            title: cb.title,
+            text: cb.text,
+            chapters: cb.chapters || [],
+            sentenceCount: cb.sentence_count || 0,
+            createdAt: new Date(cb.created_at).getTime(),
+            lastReadAt: new Date(cb.updated_at).getTime(),
+          });
+        }
+      }
+      for (const cp of cloud.progress) {
+        const lp = await getProgress(cp.book_id);
+        const ct = new Date(cp.updated_at).getTime();
+        if (!lp || ct > (lp.updatedAt || 0)) {
+          await putProgress({
+            bookId: cp.book_id,
+            currentIndex: cp.current_index,
+            updatedAt: ct,
+          });
+        }
+      }
+      for (const cf of cloud.favorites) {
+        const lfs = await getFavoritesForBook(cf.book_id);
+        const exists = lfs.find(f => f.sentenceIndex === cf.sentence_index);
+        if (!exists) {
+          await addFavorite({
+            bookId: cf.book_id,
+            sentenceIndex: cf.sentence_index,
+            text: cf.text,
+            createdAt: new Date(cf.created_at).getTime(),
+          });
+        }
+      }
+
+      supaInitialSyncDone = true;
+      setSyncState('synced');
+      if (state && state.view === 'library') renderLibrary();
+    } catch (err) {
+      console.error('Initial sync failed', err);
+      setSyncState('error');
+    }
+  }
+
+  // Lightweight pull on tab focus — just refresh progress, since that's
+  // the thing that changes most often between sessions.
+  async function doFocusSync() {
+    if (!supaUser || !supaClient || !supaInitialSyncDone) return;
+    try {
+      setSyncState('syncing');
+      const { data: cp, error } = await supaClient.from('progress').select('*');
+      if (error) throw error;
+      let any = false;
+      for (const p of cp || []) {
+        const lp = await getProgress(p.book_id);
+        const ct = new Date(p.updated_at).getTime();
+        if (!lp || ct > (lp.updatedAt || 0)) {
+          await putProgress({
+            bookId: p.book_id,
+            currentIndex: p.current_index,
+            updatedAt: ct,
+          });
+          any = true;
+        }
+      }
+      setSyncState('synced');
+      if (any && state && state.view === 'library') renderLibrary();
+    } catch (err) {
+      console.error('Focus sync failed', err);
+      setSyncState('error');
+    }
+  }
+
+  // ----- Auth UI -----
+  function renderAuthUI() {
+    const btn = document.getElementById('authBtn');
+    if (!btn) return;
+    if (supaUser) {
+      btn.classList.add('sync-on');
+      btn.classList.toggle('sync-syncing', supaSyncState === 'syncing');
+      let label = 'Synced';
+      if (supaSyncState === 'syncing') label = 'Syncing…';
+      else if (supaSyncState === 'error') label = 'Sync error';
+      btn.textContent = label;
+    } else {
+      btn.classList.remove('sync-on', 'sync-syncing');
+      btn.textContent = 'Sync off';
+    }
+  }
+
+  function openAuthModal() {
+    const modal = document.getElementById('authModal');
+    const signedInBox = document.getElementById('authSignedIn');
+    const body = document.getElementById('authBody');
+    document.getElementById('authMsg').innerHTML = '';
+    if (supaUser) {
+      body.style.display = 'none';
+      signedInBox.style.display = 'block';
+      document.getElementById('authTitle').textContent = 'Cloud sync';
+      document.getElementById('authDesc').textContent = 'Books, progress, and favorites stay in sync across devices you sign in on.';
+      document.getElementById('authEmailDisplay').textContent = supaUser.email || '(unknown)';
+      document.getElementById('authSyncStatus').textContent = 'Sync status: ' + (supaSyncState === 'synced' ? 'up to date' : supaSyncState);
+    } else {
+      body.style.display = 'block';
+      signedInBox.style.display = 'none';
+      document.getElementById('authTitle').textContent = 'Sign in to sync';
+      document.getElementById('authDesc').textContent = "Sync books, progress, and favorites across your devices. We'll email you a one-click sign-in link — no password to remember.";
+      document.getElementById('authEmail').value = '';
+    }
+    modal.classList.add('open');
+    if (!supaUser) setTimeout(() => document.getElementById('authEmail').focus(), 50);
+  }
+  function closeAuthModal() {
+    document.getElementById('authModal').classList.remove('open');
+  }
+  function showAuthMessage(text, isError) {
+    const msg = document.getElementById('authMsg');
+    msg.innerHTML = '';
+    if (!text) return;
+    const div = document.createElement('div');
+    div.className = 'auth-msg' + (isError ? ' error' : '');
+    div.textContent = text;
+    msg.appendChild(div);
+  }
+  async function handleSendMagicLink() {
+    const email = document.getElementById('authEmail').value.trim();
+    if (!email) { showAuthMessage('Enter your email.', true); return; }
+    showAuthMessage('Sending sign-in link…', false);
+    try {
+      await signInWithEmail(email);
+      showAuthMessage('Check your email at ' + email + '. Click the link to sign in. It is single-use and expires in an hour.', false);
+    } catch (err) {
+      showAuthMessage('Could not send link: ' + (err && err.message ? err.message : err), true);
+    }
+  }
+  async function handleSignOut() {
+    if (!confirm("Sign out? Your books stay on this device but new changes won't sync until you sign back in.")) return;
+    try {
+      await signOut();
+      closeAuthModal();
+      if (state && state.view === 'library') renderLibrary();
+    } catch (err) {
+      showAuthMessage('Sign-out failed: ' + (err && err.message ? err.message : err), true);
+    }
+  }
+  async function handleResync() {
+    await doInitialSync();
+    const status = document.getElementById('authSyncStatus');
+    if (status) status.textContent = 'Sync status: ' + (supaSyncState === 'synced' ? 'up to date' : supaSyncState);
+    if (state && state.view === 'library') renderLibrary();
+  }
+
+  // Init: only loads SDK if we have a stored session or a magic-link
+  // callback in the URL. Otherwise stays cold to save bandwidth.
+  async function initAuthOnLoad() {
+    const hasHashAuth = /access_token=|error_code=|error=/.test(window.location.hash);
+    const hasStored = !!localStorage.getItem(SUPABASE_STORAGE_KEY);
+    if (!hasHashAuth && !hasStored) {
+      renderAuthUI();
+      return;
+    }
+    try {
+      await loadSupabase();
+      await getSupaSession();
+      renderAuthUI();
+      if (supaUser) doInitialSync();
+      if (hasHashAuth && window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    } catch (err) {
+      console.warn('Auth init failed', err);
+      renderAuthUI();
+    }
+  }
+
+  // ============================================================
   //  State
   // ============================================================
   const settings = loadSettings();
@@ -1595,6 +2003,9 @@
         await deleteProgress(b.id);
         await deleteFavoritesForBook(b.id);
         await deleteBookRecord(b.id);
+        // Cloud cascades: deleting books cascades to progress and favorites
+        // server-side via the foreign-key ON DELETE CASCADE in the schema.
+        bgCloudDeleteBook(b.id);
         renderLibrary();
       });
       bookListEl.appendChild(row);
@@ -1833,16 +2244,19 @@
   async function saveProgressNow() {
     if (state.isQuickRead || !state.book) return;
     clearTimeout(state.saveTimer);
+    const rec = {
+      bookId: state.book.id,
+      currentIndex: state.idx,
+      updatedAt: Date.now(),
+    };
     try {
-      await putProgress({
-        bookId: state.book.id,
-        currentIndex: state.idx,
-        updatedAt: Date.now(),
-      });
+      await putProgress(rec);
       // Also update lastReadAt on the book record (cheap, occasional)
       state.book.lastReadAt = Date.now();
       await putBook(state.book);
     } catch (e) { console.warn('Progress save failed', e); }
+    bgCloudPutProgress(rec);
+    bgCloudPutBook(state.book);
   }
 
   // ============================================================
@@ -1856,6 +2270,7 @@
     if (existing) {
       await removeFavorite(existing.id);
       state.favorites = state.favorites.filter(f => f.id !== existing.id);
+      bgCloudRemoveFavorite(state.book.id, idx);
     } else {
       const rec = {
         bookId: state.book.id,
@@ -1865,6 +2280,7 @@
       };
       const id = await addFavorite(rec);
       state.favorites.push({ ...rec, id });
+      bgCloudAddFavorite(rec);
     }
     // Update visual marker on this sentence without full re-render.
     const span = reader.querySelector('.sent[data-idx="' + idx + '"]');
@@ -2085,6 +2501,7 @@
         rm.addEventListener('click', async (e) => {
           e.stopPropagation();
           await removeFavorite(f.id);
+          bgCloudRemoveFavorite(f.bookId, f.sentenceIndex);
           openFavoritesView();
         });
         row.appendChild(textEl);
@@ -2166,6 +2583,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
             "\n\nTip: this storage backend may not work inside an embedded preview. Try the deployed site in a regular browser tab.");
       return;
     }
+    bgCloudPutBook(book);
     pendingChapters = null;
     closeAddBookModal();
     try {
@@ -2202,6 +2620,16 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   $('#addBookBtn').addEventListener('click', openAddBookModal);
   $('#quickReadBtn').addEventListener('click', openQuickReadModal);
   $('#favoritesBtn').addEventListener('click', openFavoritesView);
+  $('#authBtn').addEventListener('click', openAuthModal);
+
+  // Auth modal
+  $('#authCancel').addEventListener('click', closeAuthModal);
+  $('#authClose').addEventListener('click', closeAuthModal);
+  $('#authSendLink').addEventListener('click', handleSendMagicLink);
+  $('#authSignOut').addEventListener('click', handleSignOut);
+  $('#authResync').addEventListener('click', handleResync);
+  $('#authModal').addEventListener('click', e => { if (e.target.id === 'authModal') closeAuthModal(); });
+  $('#authEmail').addEventListener('keydown', e => { if (e.key === 'Enter') handleSendMagicLink(); });
 
   // Reader
   $('#readerBack').addEventListener('click', closeBookToLibrary);
@@ -2295,8 +2723,11 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   });
 
   // Save progress when the page is hidden / unloading (best-effort).
+  // When the tab becomes visible again, opportunistically pull progress
+  // from the cloud so a position bumped on another device shows up.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveProgressNow();
+    else if (document.visibilityState === 'visible') doFocusSync();
   });
   window.addEventListener('pagehide', saveProgressNow);
 
@@ -2305,6 +2736,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   // ============================================================
   reflectSettingsToUI();
   renderLibrary();
+  initAuthOnLoad();
 })();
 </script>
 </body>
