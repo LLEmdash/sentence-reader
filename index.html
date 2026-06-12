@@ -790,6 +790,8 @@
         <button class="tiny-btn" id="authBtn" title="Cloud sync">Sync off</button>
         <button class="tiny-btn" id="favoritesBtn">Favorites</button>
         <button class="tiny-btn" id="exportBtn" title="Download a backup of your whole library">Export</button>
+        <button class="tiny-btn" id="importBtn" title="Restore a previously exported backup">Import</button>
+        <input type="file" id="importFileInput" accept=".json,application/json" hidden />
       </div>
     </header>
 
@@ -2547,24 +2549,17 @@
   }
 
   // ============================================================
-  //  Export library to JSON (full backup)
+  //  Export / Import library (full backup)
   // ============================================================
-  async function exportLibraryToJson() {
-    let books, favorites;
-    try {
-      books = await getAllBooks();
-      favorites = await getAllFavorites();
-    } catch (err) {
-      alert("Couldn't read the local library.\n\n" + (err && err.message ? err.message : err) +
-            "\n\nIf you're inside a sandboxed preview, try the deployed site instead.");
-      return;
-    }
+  async function buildLibraryExportPayload() {
+    const books = await getAllBooks();
+    const favorites = await getAllFavorites();
     const progressArr = [];
     for (const b of books) {
       const p = await getProgress(b.id);
       if (p) progressArr.push(p);
     }
-    const payload = {
+    return {
       appName: 'Sentence Reader',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
@@ -2591,12 +2586,43 @@
         createdAt: f.createdAt || null,
       })),
     };
+  }
+
+  async function exportLibraryToJson() {
+    let payload;
+    try {
+      payload = await buildLibraryExportPayload();
+    } catch (err) {
+      alert("Couldn't read the local library.\n\n" + (err && err.message ? err.message : err) +
+            "\n\nIf you're inside a sandboxed preview, try the deployed site instead.");
+      return;
+    }
     const json = JSON.stringify(payload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
+    const filename = 'sentence-reader-library-' + new Date().toISOString().slice(0, 10) + '.json';
+
+    // Phone-friendly path: use the Web Share API when files are supported.
+    // On iOS this opens the system share sheet so the user can Save to
+    // Files, AirDrop, send to Mail, etc. — much more reliable than the
+    // anchor-click download trick, which Safari sometimes ignores.
+    if (typeof navigator !== 'undefined' && navigator.canShare && typeof File !== 'undefined') {
+      try {
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Sentence Reader library backup' });
+          return;
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // user cancelled
+        console.warn('Web Share API failed, falling back to download', err);
+      }
+    }
+
+    // Desktop / fallback path: trigger a regular download.
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'sentence-reader-library-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2604,6 +2630,125 @@
     // download. Revoking too eagerly can cause the download to fail on some
     // browsers (Safari in particular).
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Import policy: purely additive. Never overwrite existing local state.
+  // Books and favorites also push to cloud (those ops are upsert-safe);
+  // progress is added locally only — cloud may have newer progress from
+  // another device, and we don't want to clobber it with possibly-stale
+  // backup data. Resync from the auth modal can sync up imported progress
+  // afterward if the user wants.
+  async function importLibraryFromJson(jsonText) {
+    let payload;
+    try {
+      payload = JSON.parse(jsonText);
+    } catch (err) {
+      throw new Error('Could not parse the file as JSON: ' + err.message);
+    }
+    if (!payload || payload.appName !== 'Sentence Reader') {
+      throw new Error("This doesn't look like a Sentence Reader backup file.");
+    }
+    if (payload.formatVersion !== 1) {
+      throw new Error('Backup format version ' + payload.formatVersion +
+                      ' is not supported by this version of the app.');
+    }
+    const books = Array.isArray(payload.books) ? payload.books : [];
+    const progress = Array.isArray(payload.progress) ? payload.progress : [];
+    const favorites = Array.isArray(payload.favorites) ? payload.favorites : [];
+
+    let dateStr = 'an unknown date';
+    if (payload.exportedAt) {
+      try { dateStr = new Date(payload.exportedAt).toLocaleString(); } catch (e) {}
+    }
+    const msg = 'Import this backup?\n\n' +
+      '• Exported: ' + dateStr + '\n' +
+      '• ' + books.length + ' book(s)\n' +
+      '• ' + progress.length + ' progress record(s)\n' +
+      '• ' + favorites.length + ' favorite(s)\n\n' +
+      'Existing items in your library will not be overwritten.';
+    if (!confirm(msg)) return null;
+
+    // 1. Books — add ones whose UUID isn't already local.
+    const localBooks = await getAllBooks();
+    const localBookIds = new Set(localBooks.map(b => b.id));
+    const importedBookIds = new Set();
+    let booksAdded = 0;
+    for (const b of books) {
+      if (!b || !b.id) continue;
+      importedBookIds.add(b.id);
+      if (localBookIds.has(b.id)) continue;
+      const newBook = {
+        id: b.id,
+        title: b.title || 'Untitled',
+        text: b.text || '',
+        chapters: b.chapters || [],
+        sentenceCount: b.sentenceCount || 0,
+        createdAt: b.createdAt || Date.now(),
+        lastReadAt: b.lastReadAt || Date.now(),
+      };
+      await putBook(newBook);
+      bgCloudPutBook(newBook);
+      booksAdded++;
+    }
+
+    // 2. Progress — add only where local has none. Don't push to cloud.
+    let progressAdded = 0;
+    for (const p of progress) {
+      if (!p || !p.bookId) continue;
+      if (!localBookIds.has(p.bookId) && !importedBookIds.has(p.bookId)) continue;
+      const existing = await getProgress(p.bookId);
+      if (existing) continue;
+      await putProgress({
+        bookId: p.bookId,
+        currentIndex: typeof p.currentIndex === 'number' ? p.currentIndex : 0,
+        updatedAt: p.updatedAt || Date.now(),
+      });
+      progressAdded++;
+    }
+
+    // 3. Favorites — add ones not already present by (bookId, sentenceIndex).
+    let favoritesAdded = 0;
+    for (const f of favorites) {
+      if (!f || !f.bookId || typeof f.sentenceIndex !== 'number') continue;
+      if (!localBookIds.has(f.bookId) && !importedBookIds.has(f.bookId)) continue;
+      const existingForBook = await getFavoritesForBook(f.bookId);
+      if (existingForBook.find(e => e.sentenceIndex === f.sentenceIndex)) continue;
+      const rec = {
+        bookId: f.bookId,
+        sentenceIndex: f.sentenceIndex,
+        text: f.text || '',
+        createdAt: f.createdAt || Date.now(),
+      };
+      await addFavorite(rec);
+      bgCloudAddFavorite(rec);
+      favoritesAdded++;
+    }
+
+    return { booksAdded, progressAdded, favoritesAdded };
+  }
+
+  async function handleImportFileSelected(file) {
+    if (!file) return;
+    let text;
+    try {
+      text = await file.text();
+    } catch (err) {
+      alert('Could not read the file: ' + (err && err.message ? err.message : err));
+      return;
+    }
+    try {
+      const result = await importLibraryFromJson(text);
+      if (result === null) return; // user cancelled at confirm
+      alert('Import complete:\n\n' +
+            '• ' + result.booksAdded + ' new book(s) added\n' +
+            '• ' + result.progressAdded + ' progress record(s) added\n' +
+            '• ' + result.favoritesAdded + ' favorite(s) added\n\n' +
+            'Existing items were left as-is.');
+      renderLibrary();
+    } catch (err) {
+      console.error('Import failed:', err);
+      alert('Import failed: ' + (err && err.message ? err.message : err));
+    }
   }
 
   // ============================================================
@@ -2713,6 +2858,12 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
       console.error('Export failed:', err);
       alert('Export failed: ' + (err && err.message ? err.message : err));
     });
+  });
+  $('#importBtn').addEventListener('click', () => $('#importFileInput').click());
+  $('#importFileInput').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = ''; // let the same file be re-selected later
+    if (f) handleImportFileSelected(f);
   });
   $('#authBtn').addEventListener('click', openAuthModal);
 
