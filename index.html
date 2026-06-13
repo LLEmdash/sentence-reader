@@ -389,6 +389,28 @@
   .reader .sent:hover:not(.active) { color: var(--ink-soft); }
   .reader p { margin: 0 0 1.1em; }
 
+  /* Inline illustrations from EPUBs. They occupy a sentence index in
+     the playback timeline so position and navigation stay coherent,
+     but render as a block image instead of a highlighted span. */
+  .reader figure.illus {
+    margin: 1.6em 0;
+    display: flex;
+    justify-content: center;
+    cursor: pointer;
+    scroll-margin-top: 90px;
+    scroll-margin-bottom: var(--reader-clear-bottom, 200px);
+  }
+  .reader figure.illus img {
+    max-width: 100%;
+    max-height: 65vh;
+    border: 1px solid var(--rule);
+    background: var(--paper-edge);
+    transition: box-shadow 280ms ease;
+  }
+  .reader figure.illus.active img {
+    box-shadow: 0 0 0 3px var(--highlight);
+  }
+
   /* Empty (quick read view before paste) */
   .empty {
     display: flex;
@@ -1206,6 +1228,16 @@
         const tag = child.tagName.toUpperCase();
         if (tag === 'BR') { out += '\n'; continue; }
         if (tag === 'HR') { out += '\n\n'; continue; }
+        if (tag === 'IMG') {
+          // Emit an [[IMG:src]] placeholder as its own paragraph.
+          // readEpub replaces these with [[IMAGE:<datauri>]] markers
+          // after looking the file up in the zip.
+          const src = (child.getAttribute('src') || '').trim();
+          if (src && !src.startsWith('data:')) {
+            out += '\n\n[[IMG:' + src + ']]\n\n';
+          }
+          continue;
+        }
         const isBlock = BLOCK_TAGS.has(tag);
         if (isBlock) out += '\n\n';
         out += blockText(child);
@@ -1243,6 +1275,58 @@
       else if (p !== '.' && p !== '') out.push(p);
     }
     return out.join('/');
+  }
+
+  // Scan a section's text for [[IMG:src]] placeholders, resolve each
+  // src against the chapter file's path inside the zip, load and resize
+  // the image, and substitute the placeholder with [[IMAGE:<datauri>]].
+  // Failures are silent — the placeholder is dropped and reading
+  // continues without that illustration.
+  async function replaceImageMarkers(text, chapterPath, zip) {
+    const re = /\[\[IMG:([^\]]+)\]\]/g;
+    let out = '';
+    let lastIdx = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      out += text.slice(lastIdx, m.index);
+      const src = m[1].trim();
+      try {
+        const imgPath = resolveZipPath(chapterPath, src);
+        const f = zip.file(imgPath);
+        if (f) {
+          const raw = await f.async('blob');
+          const mediaType = guessImageType(imgPath) || 'image/jpeg';
+          const typed = new Blob([await raw.arrayBuffer()], { type: mediaType });
+          const dataUrl = await resizeImageBlob(typed, 600, 800, 0.78);
+          out += '[[IMAGE:' + dataUrl + ']]';
+        }
+      } catch (err) {
+        console.warn('Failed to embed inline image', src, err);
+      }
+      lastIdx = m.index + m[0].length;
+    }
+    out += text.slice(lastIdx);
+    return out;
+  }
+
+  function guessImageType(path) {
+    const ext = (path.split('.').pop() || '').toLowerCase();
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'svg') return 'image/svg+xml';
+    return null;
+  }
+
+  // Marker helpers for image "sentences" in the reader timeline.
+  const IMAGE_MARKER_PREFIX = '[[IMAGE:';
+  const IMAGE_MARKER_SUFFIX = ']]';
+  function isImageSentence(s) {
+    return !!(s && s.text && s.text.startsWith(IMAGE_MARKER_PREFIX) && s.text.endsWith(IMAGE_MARKER_SUFFIX));
+  }
+  function getImageDataUrl(s) {
+    return s.text.slice(IMAGE_MARKER_PREFIX.length, -IMAGE_MARKER_SUFFIX.length);
   }
 
   let jszipPromise = null;
@@ -1442,7 +1526,11 @@
       const sectionFile = zip.file(item.path);
       if (!sectionFile) continue;
       const html = await sectionFile.async('text');
-      const sectionText = extractTextFromHtml(html);
+      // Extract text, then resolve any [[IMG:src]] placeholders in it
+      // to [[IMAGE:<datauri>]] markers by looking up each src in the
+      // zip relative to this chapter's path.
+      let sectionText = extractTextFromHtml(html);
+      sectionText = await replaceImageMarkers(sectionText, item.path, zip);
       if (!sectionText.trim()) continue;
 
       const tocEntry = tocEntries.find(t => t.path === item.path);
@@ -2345,7 +2433,30 @@
     emptyState.hidden = true;
     const frag = document.createDocumentFragment();
     let currentP = document.createElement('p');
+    const flushP = () => {
+      if (currentP.childNodes.length) frag.appendChild(currentP);
+      currentP = document.createElement('p');
+    };
     state.sentences.forEach((s, i) => {
+      if (isImageSentence(s)) {
+        // Close out any in-progress text paragraph so the figure sits
+        // on its own line, then drop the figure into the fragment.
+        flushP();
+        const fig = document.createElement('figure');
+        let figCls = 'illus';
+        if (i === state.idx) figCls += ' active';
+        fig.className = figCls;
+        fig.dataset.idx = i;
+        const img = document.createElement('img');
+        img.src = getImageDataUrl(s);
+        img.alt = '';
+        img.loading = 'lazy';
+        fig.appendChild(img);
+        fig.addEventListener('click', () => goTo(i));
+        frag.appendChild(fig);
+        if (s.paragraphBreakAfter) currentP = document.createElement('p');
+        return;
+      }
       const span = document.createElement('span');
       let cls = 'sent';
       if (i === state.idx) cls += ' active';
@@ -2357,10 +2468,7 @@
       span.addEventListener('click', () => goTo(i));
       currentP.appendChild(span);
       currentP.appendChild(document.createTextNode(' '));
-      if (s.paragraphBreakAfter) {
-        frag.appendChild(currentP);
-        currentP = document.createElement('p');
-      }
+      if (s.paragraphBreakAfter) flushP();
     });
     if (currentP.childNodes.length) frag.appendChild(currentP);
     reader.innerHTML = '';
@@ -2371,10 +2479,15 @@
   }
 
   function updateActiveOnly() {
-    const spans = reader.querySelectorAll('.sent');
-    spans.forEach((sp, i) => {
-      sp.classList.toggle('active', i === state.idx);
-      sp.classList.toggle('read', i < state.idx);
+    // Use data-idx instead of iteration index — interleaved <figure>
+    // illustrations push the .sent NodeList positions out of sync with
+    // the underlying sentences array, so we can't rely on the forEach
+    // index.
+    const indexed = reader.querySelectorAll('[data-idx]');
+    indexed.forEach(el => {
+      const idx = parseInt(el.dataset.idx, 10);
+      el.classList.toggle('active', idx === state.idx);
+      el.classList.toggle('read', idx < state.idx);
     });
     updateStats();
     updateFavStar();
@@ -2394,7 +2507,11 @@
       return;
     }
     favStarBtn.style.visibility = 'visible';
-    const isFav = favSetFor(state.idx);
+    // Disable the star on illustration "sentences" — nothing to favorite.
+    const onImage = isImageSentence(state.sentences[state.idx]);
+    favStarBtn.disabled = onImage;
+    favStarBtn.style.opacity = onImage ? '0.4' : '';
+    const isFav = !onImage && favSetFor(state.idx);
     favStarBtn.textContent = isFav ? '★' : '☆';
     favStarBtn.classList.toggle('on', isFav);
   }
@@ -2413,7 +2530,9 @@
   }
 
   function scrollActiveIntoView() {
-    const active = reader.querySelector('.sent.active');
+    // Active element might be a text span (.sent.active) or an
+    // illustration figure (.illus.active) — match either via data-idx.
+    const active = reader.querySelector('[data-idx="' + state.idx + '"]');
     if (!active) return;
     // scrollIntoView is iframe/webview friendly — propagates across nested
     // scroll containers. Don't use window.scrollTo here.
@@ -2446,6 +2565,11 @@
   //  Timing / playback
   // ============================================================
   function durationFor(sentence) {
+    if (isImageSentence(sentence)) {
+      // Hold an illustration briefly so the eye registers it, then move
+      // on; don't pace it by WPM.
+      return 1500 + (sentence.paragraphBreakAfter ? state.paraPauseMs : 0);
+    }
     const words = countWords(sentence.text);
     const base = (words / state.wpm) * 60 * 1000;
     const extra = state.pauseMs + (sentence.paragraphBreakAfter ? state.paraPauseMs : 0);
@@ -2543,6 +2667,8 @@
     if (state.isQuickRead || !state.book) return;
     if (!state.sentences.length) return;
     const idx = state.idx;
+    // Don't allow favoriting an illustration — there's no text to save.
+    if (isImageSentence(state.sentences[idx])) return;
     const existing = state.favorites.find(f => f.sentenceIndex === idx);
     if (existing) {
       await removeFavorite(existing.id);
@@ -2673,7 +2799,9 @@
     const max = 50;
     let found = 0;
     for (let i = 0; i < state.sentences.length && found < max; i++) {
-      const text = state.sentences[i].text;
+      const s = state.sentences[i];
+      if (isImageSentence(s)) continue; // skip illustrations
+      const text = s.text;
       const at = text.toLowerCase().indexOf(qLower);
       if (at === -1) continue;
       found++;
@@ -2732,7 +2860,12 @@
     const ch = currentChapterFor(i);
     scrubMeta.textContent = 'Sentence ' + (i + 1) + ' of ' + total + ' · ' + pct + '%' +
                             (ch ? (' · ' + ch.title) : '');
-    scrubPreview.textContent = state.sentences[i]?.text || '—';
+    const s = state.sentences[i];
+    if (isImageSentence(s)) {
+      scrubPreview.textContent = '[illustration]';
+    } else {
+      scrubPreview.textContent = (s && s.text) || '—';
+    }
   }
 
   // ============================================================
