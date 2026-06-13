@@ -195,13 +195,37 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    gap: 14px;
     padding: 18px 0;
     border-bottom: 1px solid var(--rule);
     cursor: pointer;
     transition: background 120ms ease;
   }
   .book-row:hover { background: rgba(216,201,164,0.18); }
+  .book-cover {
+    width: 52px;
+    height: 72px;
+    flex-shrink: 0;
+    background: var(--paper-edge);
+    border: 1px solid var(--rule);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .book-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .book-cover .cover-initial {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 30px;
+    color: var(--ink-soft);
+    line-height: 1;
+  }
   .book-row .book-main { flex: 1; min-width: 0; }
   .book-row .book-title {
     font-family: 'Newsreader', serif;
@@ -1236,6 +1260,66 @@
     return jszipPromise;
   }
 
+  // Resize an image Blob to fit within maxW x maxH, preserving aspect
+  // ratio. Returns a JPEG data URL. Used to keep EPUB covers small
+  // enough to live happily inside an IndexedDB record + Supabase row
+  // without bloating sync payloads. Typical output: 20-50 KB per cover.
+  function resizeImageBlob(blob, maxW, maxH, quality) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
+        const w = Math.max(1, Math.round(img.width * ratio));
+        const h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; // safe background under transparent pixels
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(objectUrl);
+        canvas.toBlob(out => {
+          if (!out) { reject(new Error('Canvas.toBlob returned null')); return; }
+          const fr = new FileReader();
+          fr.onloadend = () => resolve(fr.result);
+          fr.onerror = () => reject(fr.error);
+          fr.readAsDataURL(out);
+        }, 'image/jpeg', quality || 0.82);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Could not decode cover image'));
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  // Find the cover image manifest item in an OPF, covering both EPUB3
+  // (properties="cover-image") and EPUB2 (meta name="cover" content="<id>")
+  // conventions, plus a couple of common fallback id patterns and an
+  // href-contains-"cover" sweep for older / hand-rolled books.
+  function findEpubCoverItem(opfDoc, manifest) {
+    const e3 = Object.values(manifest).find(m =>
+      (m.properties || '').split(/\s+/).includes('cover-image'));
+    if (e3) return e3;
+    const meta = opfDoc.querySelector('metadata meta[name="cover"]');
+    if (meta) {
+      const coverId = meta.getAttribute('content');
+      if (coverId && manifest[coverId]) return manifest[coverId];
+    }
+    const idCandidates = ['cover', 'cover-image', 'coverimage', 'cover-img', 'Cover', 'coverImage'];
+    for (const id of idCandidates) {
+      if (manifest[id]) return manifest[id];
+    }
+    for (const m of Object.values(manifest)) {
+      const mt = (m.mediaType || '').toLowerCase();
+      if (mt.startsWith('image/') && /cover/i.test(m.path)) return m;
+    }
+    return null;
+  }
+
   async function readEpub(file) {
     const JSZip = await loadJSZip();
     const buf = await file.arrayBuffer();
@@ -1386,13 +1470,38 @@
 
     const text = textParts.join('\n\n');
     if (!text.trim()) throw new Error('EPUB parsed, but no readable text was found inside.');
-    return { text, chapters, title: epubTitle };
+
+    // 5. Try to extract a cover image. Non-fatal — books without covers
+    //    still import fine; we just fall back to a placeholder thumbnail
+    //    in the library.
+    let coverImage = null;
+    try {
+      const coverItem = findEpubCoverItem(opfDoc, manifest);
+      if (coverItem) {
+        const coverFile = zip.file(coverItem.path);
+        if (coverFile) {
+          const rawBlob = await coverFile.async('blob');
+          // The Blob from JSZip has a generic type; rewrap with the
+          // manifest-declared media type so the browser decodes correctly.
+          const typed = new Blob([await rawBlob.arrayBuffer()], {
+            type: coverItem.mediaType || 'image/jpeg',
+          });
+          coverImage = await resizeImageBlob(typed, 300, 420, 0.82);
+        }
+      }
+    } catch (err) {
+      console.warn('Cover extraction failed, continuing without one:', err);
+    }
+
+    return { text, chapters, title: epubTitle, coverImage };
   }
 
   // Pending chapter titles set by handleFileUpload, consumed by
   // saveBookAction to compute book.chapters. Reset on modal open/close
   // and on save.
   let pendingChapters = null;
+  // Same pattern for the EPUB cover thumbnail (data URL or null).
+  let pendingCoverImage = null;
 
   function setUploadStatus(text, isError) {
     const el = document.getElementById('uploadStatus');
@@ -1410,6 +1519,7 @@
     const name = file.name || 'file';
     const ext = (name.split('.').pop() || '').toLowerCase();
     pendingChapters = null;
+    pendingCoverImage = null;
     setUploadStatus('Reading ' + name + '…');
     try {
       let extracted;
@@ -1417,9 +1527,9 @@
         extracted = await readEpub(file);
       } else if (ext === 'html' || ext === 'htm' || ext === 'xhtml') {
         const text = await file.text();
-        extracted = { text: extractTextFromHtml(text), chapters: null, title: null };
+        extracted = { text: extractTextFromHtml(text), chapters: null, title: null, coverImage: null };
       } else {
-        extracted = { text: await file.text(), chapters: null, title: null };
+        extracted = { text: await file.text(), chapters: null, title: null, coverImage: null };
       }
       if (!extracted.text || !extracted.text.trim()) {
         throw new Error('No readable text was found in this file.');
@@ -1434,9 +1544,11 @@
       }
       pendingChapters = (extracted.chapters && extracted.chapters.length)
         ? extracted.chapters : null;
+      pendingCoverImage = extracted.coverImage || null;
       const kb = Math.round(extracted.text.length / 1000);
       const chapMsg = pendingChapters ? (' · ' + pendingChapters.length + ' chapters') : '';
-      setUploadStatus('Loaded · ' + kb + 'k chars' + chapMsg, false);
+      const coverMsg = pendingCoverImage ? ' · cover' : '';
+      setUploadStatus('Loaded · ' + kb + 'k chars' + chapMsg + coverMsg, false);
     } catch (err) {
       console.error('File upload failed:', err);
       setUploadStatus(err && err.message ? err.message : String(err), true);
@@ -1715,6 +1827,7 @@
       text: book.text,
       chapters: book.chapters || [],
       sentence_count: book.sentenceCount || 0,
+      cover_image: book.coverImage || null,
       updated_at: new Date(book.lastReadAt || Date.now()).toISOString(),
     });
     if (error) throw error;
@@ -1802,6 +1915,7 @@
             text: cb.text,
             chapters: cb.chapters || [],
             sentenceCount: cb.sentence_count || 0,
+            coverImage: cb.cover_image || null,
             createdAt: new Date(cb.created_at).getTime(),
             lastReadAt: new Date(cb.updated_at).getTime(),
           });
@@ -2097,6 +2211,7 @@
       const row = document.createElement('div');
       row.className = 'book-row';
       row.innerHTML =
+        '<div class="book-cover"></div>' +
         '<div class="book-main">' +
           '<div class="book-title"></div>' +
           '<div class="book-meta">' +
@@ -2107,6 +2222,20 @@
           '<div class="mini-bar"><div></div></div>' +
         '</div>' +
         '<button class="row-delete" title="Delete book" aria-label="Delete book">✕</button>';
+      const coverEl = row.querySelector('.book-cover');
+      if (b.coverImage) {
+        const img = document.createElement('img');
+        img.src = b.coverImage;
+        img.alt = '';
+        img.loading = 'lazy';
+        coverEl.appendChild(img);
+      } else {
+        const initial = (b.title || '?').trim().charAt(0).toUpperCase() || '?';
+        const span = document.createElement('span');
+        span.className = 'cover-initial';
+        span.textContent = initial;
+        coverEl.appendChild(span);
+      }
       row.querySelector('.book-title').textContent = b.title;
       row.querySelector('.pct').textContent = pct + '% read';
       row.querySelector('.last').textContent = b.lastReadAt ? timeAgo(b.lastReadAt) : 'never opened';
@@ -2689,6 +2818,7 @@
         text: b.text,
         chapters: b.chapters || [],
         sentenceCount: b.sentenceCount || 0,
+        coverImage: b.coverImage || null,
         createdAt: b.createdAt || null,
         lastReadAt: b.lastReadAt || null,
       })),
@@ -2801,6 +2931,7 @@
         text: b.text || '',
         chapters: b.chapters || [],
         sentenceCount: b.sentenceCount || 0,
+        coverImage: b.coverImage || null,
         createdAt: b.createdAt || Date.now(),
         lastReadAt: b.lastReadAt || Date.now(),
       };
@@ -2887,6 +3018,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     bookTitleInput.value = '';
     bookTextInput.value = '';
     pendingChapters = null;
+    pendingCoverImage = null;
     setUploadStatus('', false);
     const fileInput = document.getElementById('bookFileInput');
     if (fileInput) fileInput.value = '';
@@ -2896,6 +3028,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   function closeAddBookModal() {
     addBookModal.classList.remove('open');
     pendingChapters = null;
+    pendingCoverImage = null;
     setUploadStatus('', false);
   }
   function openQuickReadModal() {
@@ -2923,6 +3056,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
       text,
       sentenceCount: sentences.length,
       chapters,
+      coverImage: pendingCoverImage || null,
       createdAt: Date.now(),
       lastReadAt: Date.now(),
     };
@@ -2936,6 +3070,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     }
     bgCloudPutBook(book);
     pendingChapters = null;
+    pendingCoverImage = null;
     closeAddBookModal();
     try {
       await openBook(book.id);
