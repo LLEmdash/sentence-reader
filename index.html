@@ -319,9 +319,13 @@
   }
 
   /* Reader area */
+  /* --reader-clear-bottom is recomputed in JS to match the *actual* height
+     of the fixed controls bar (including the expandable settings panel),
+     so the active sentence's scroll buffer always exceeds whatever's
+     covering the bottom of the viewport. */
   .reader-wrap {
     overflow-x: hidden;
-    padding: 28px 22px 180px;
+    padding: 28px 22px var(--reader-clear-bottom, 200px);
     scroll-behavior: smooth;
   }
   .reader {
@@ -337,10 +341,11 @@
     padding: 1px 1px;
     border-radius: 2px;
     cursor: pointer;
-    /* Reserve space at top (for sticky header) and bottom (for fixed controls)
-       so scrollIntoView keeps the highlighted sentence clear of overlays. */
+    /* Reserve space at top (for sticky header) and bottom (for fixed
+       controls) so scrollIntoView keeps the highlighted sentence clear
+       of overlays. The bottom margin matches the actual controls height. */
     scroll-margin-top: 90px;
-    scroll-margin-bottom: 180px;
+    scroll-margin-bottom: var(--reader-clear-bottom, 200px);
   }
   .reader .sent.active {
     color: var(--highlight-ink);
@@ -2265,6 +2270,19 @@
     favStarBtn.classList.toggle('on', isFav);
   }
 
+  // Recompute --reader-clear-bottom from the actual height of the fixed
+  // controls bar. Called on init, on window resize, and whenever the
+  // settings panel toggles open/closed (which changes the controls
+  // height). The +24 buffer is a comfort margin so the active sentence
+  // doesn't sit right against the controls.
+  function adjustReaderClearance() {
+    const c = document.querySelector('.controls');
+    if (!c) return;
+    const h = c.offsetHeight;
+    const total = Math.max(160, h + 24);
+    document.documentElement.style.setProperty('--reader-clear-bottom', total + 'px');
+  }
+
   function scrollActiveIntoView() {
     const active = reader.querySelector('.sent.active');
     if (!active) return;
@@ -2275,6 +2293,24 @@
     } catch (e) {
       active.scrollIntoView();
     }
+    // Belt-and-suspenders: 'nearest' is permissive — some browsers treat
+    // "any part visible" as in-view and don't fully honor scroll-margin
+    // when the sentence is partially below the fixed controls. After the
+    // initial scroll has had a moment to settle, check whether the
+    // sentence bottom is still under the controls top, and if so force
+    // a block:'end' scroll (which respects scroll-margin-bottom and lands
+    // the sentence well above the controls).
+    setTimeout(() => {
+      const controls = document.querySelector('.controls');
+      if (!controls) return;
+      const sRect = active.getBoundingClientRect();
+      const cTop = controls.getBoundingClientRect().top;
+      if (sRect.bottom > cTop - 8) {
+        try {
+          active.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+        } catch (e) { /* no-op */ }
+      }
+    }, 360);
   }
 
   // ============================================================
@@ -3033,7 +3069,13 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
 
   $('#settingsBtn').addEventListener('click', () => {
     $('#settingsPanel').classList.toggle('open');
+    // The panel's open/closed state changes the controls bar height,
+    // so recompute the scroll clearance on the next frame after the
+    // browser has finished the layout.
+    requestAnimationFrame(adjustReaderClearance);
   });
+
+  window.addEventListener('resize', adjustReaderClearance);
 
   // Empty state (when reader is open with nothing — only in quick read flow)
   $('#emptyPasteBtn').addEventListener('click', openQuickReadModal);
@@ -3095,6 +3137,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
   //  Init
   // ============================================================
   reflectSettingsToUI();
+  adjustReaderClearance();
   renderLibrary();
   initAuthOnLoad();
 })();
