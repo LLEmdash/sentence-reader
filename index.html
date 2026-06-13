@@ -10,7 +10,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
+    /* Light theme (default). Dark equivalents below override these
+       when data-theme="dark" is set on <html> (manual) or via
+       prefers-color-scheme when data-theme="auto". */
     --paper: #f3ece0;
+    --paper-rgb: 243, 236, 224;
     --paper-edge: #e8dfcd;
     --ink: #1c160d;
     --ink-soft: #4a3f2c;
@@ -18,8 +22,53 @@
     --very-faded: #d8ccb1;
     --highlight: #f5d76e;
     --highlight-soft: #fae8a8;
+    --highlight-ink: #1c160d;
     --accent: #b14a2c;
     --rule: #d6c9ac;
+    --input-bg: #fbf6ea;
+    --bg-tint-1: rgba(177, 74, 44, 0.04);
+    --bg-tint-2: rgba(28, 22, 13, 0.04);
+  }
+
+  /* Dark theme palette: warm dark paper, cream prose, a deeper amber
+     highlight that keeps the highlighter metaphor without blowing out
+     in low light. Active sentence text stays dark (highlight-ink) so
+     it reads like a real highlighter mark over text. */
+  :root[data-theme="dark"] {
+    --paper: #1d1814;
+    --paper-rgb: 29, 24, 20;
+    --paper-edge: #15110d;
+    --ink: #ede2cc;
+    --ink-soft: #b8a98a;
+    --faded: #6e5f43;
+    --very-faded: #2e2820;
+    --highlight: #d4a73a;
+    --highlight-soft: #5c4926;
+    --highlight-ink: #1c1410;
+    --accent: #e07a52;
+    --rule: #3a3225;
+    --input-bg: #25201a;
+    --bg-tint-1: rgba(224, 122, 82, 0.05);
+    --bg-tint-2: rgba(237, 226, 204, 0.03);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] {
+      --paper: #1d1814;
+      --paper-rgb: 29, 24, 20;
+      --paper-edge: #15110d;
+      --ink: #ede2cc;
+      --ink-soft: #b8a98a;
+      --faded: #6e5f43;
+      --very-faded: #2e2820;
+      --highlight: #d4a73a;
+      --highlight-soft: #5c4926;
+      --highlight-ink: #1c1410;
+      --accent: #e07a52;
+      --rule: #3a3225;
+      --input-bg: #25201a;
+      --bg-tint-1: rgba(224, 122, 82, 0.05);
+      --bg-tint-2: rgba(237, 226, 204, 0.03);
+    }
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -33,10 +82,11 @@
     font-feature-settings: "liga" 1, "kern" 1;
     -webkit-font-smoothing: antialiased;
     background-image:
-      radial-gradient(at 20% 10%, rgba(177,74,44,0.04) 0%, transparent 50%),
-      radial-gradient(at 80% 90%, rgba(28,22,13,0.04) 0%, transparent 50%);
+      radial-gradient(at 20% 10%, var(--bg-tint-1) 0%, transparent 50%),
+      radial-gradient(at 80% 90%, var(--bg-tint-2) 0%, transparent 50%);
     min-height: 100vh;
     min-height: 100dvh;
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   .app {
@@ -293,7 +343,7 @@
     scroll-margin-bottom: 180px;
   }
   .reader .sent.active {
-    color: var(--ink);
+    color: var(--highlight-ink);
     background-color: var(--highlight);
     box-shadow:
       0 0 0 2px var(--highlight),
@@ -338,7 +388,7 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, var(--paper) 75%, rgba(243,236,224,0));
+    background: linear-gradient(to top, var(--paper) 75%, rgba(var(--paper-rgb), 0));
     padding: 18px 22px calc(14px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
@@ -461,6 +511,28 @@
   }
   .setting input[type="number"]:focus { border-color: var(--ink); }
 
+  .theme-picker {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .theme-opt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 5px 9px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .theme-opt:hover { color: var(--ink); border-color: var(--ink); }
+  .theme-opt.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
   /* ===== Favorites view ===== */
   .fav-view {
     padding: 0 22px 80px;
@@ -551,7 +623,7 @@
   }
   textarea, .title-input {
     width: 100%;
-    background: #fbf6ea;
+    background: var(--input-bg);
     border: 1px solid var(--rule);
     padding: 14px;
     font-family: 'Newsreader', serif;
@@ -643,7 +715,7 @@
 
   .nav-search-input {
     width: 100%;
-    background: #fbf6ea;
+    background: var(--input-bg);
     border: 1px solid var(--rule);
     padding: 10px 12px;
     font-family: 'Newsreader', serif;
@@ -725,7 +797,7 @@
     font-size: 15px;
     line-height: 1.5;
     color: var(--ink);
-    background: #fbf6ea;
+    background: var(--input-bg);
     padding: 10px 12px;
     border: 1px solid var(--rule);
     min-height: 60px;
@@ -858,6 +930,14 @@
           <div></div>
         </div>
         <div class="settings" id="settingsPanel">
+          <div class="setting">
+            <span>Theme</span>
+            <div class="theme-picker" id="themePicker">
+              <button class="theme-opt" data-theme="auto">Auto</button>
+              <button class="theme-opt" data-theme="light">Light</button>
+              <button class="theme-opt" data-theme="dark">Dark</button>
+            </div>
+          </div>
           <div class="setting">
             <span>WPM</span>
             <input type="range" id="wpm" min="100" max="800" step="10" value="300">
@@ -1479,6 +1559,7 @@
   const DEFAULT_SETTINGS = {
     wpm: 300, minMs: 700, pauseMs: 120, paraPauseMs: 600, autoScroll: true,
     fontSize: 22,
+    theme: 'auto', // 'auto' | 'light' | 'dark'
   };
   function loadSettings() {
     try {
@@ -1493,6 +1574,7 @@
         wpm: s.wpm, minMs: s.minMs, pauseMs: s.pauseMs,
         paraPauseMs: s.paraPauseMs, autoScroll: s.autoScroll,
         fontSize: s.fontSize,
+        theme: s.theme,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1913,6 +1995,7 @@
     paraPauseMs: settings.paraPauseMs,
     autoScroll: settings.autoScroll,
     fontSize: settings.fontSize,
+    theme: settings.theme || 'auto',
     timer: null,
     progressRaf: null,
     saveTimer: null,
@@ -2834,6 +2917,20 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     document.documentElement.style.setProperty('--reader-fs', px + 'px');
   }
 
+  function applyTheme() {
+    const t = state.theme || 'auto';
+    document.documentElement.dataset.theme = t;
+    // Update meta theme-color so iOS/Android tint chrome to match
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = t === 'dark' || (t === 'auto' && prefersDark);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#1d1814' : '#f3ece0');
+    // Reflect active state on the picker
+    document.querySelectorAll('.theme-opt').forEach(b => {
+      b.classList.toggle('active', b.dataset.theme === t);
+    });
+  }
+
   function reflectSettingsToUI() {
     wpmInput.value = state.wpm;
     wpmVal.textContent = state.wpm;
@@ -2843,6 +2940,7 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     autoScrollInput.checked = state.autoScroll;
     fontSizeInput.value = state.fontSize;
     applyFontSize();
+    applyTheme();
   }
 
   // ============================================================
@@ -2915,6 +3013,23 @@ Adjust the WPM. Skip around. Pause when something lands. The point isn't to race
     applyFontSize();
     saveSettings(state);
   });
+
+  document.querySelectorAll('.theme-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.theme;
+      if (t !== 'auto' && t !== 'light' && t !== 'dark') return;
+      state.theme = t;
+      applyTheme();
+      saveSettings(state);
+    });
+  });
+  // Re-evaluate the theme-color meta when the system preference flips
+  // and we're following Auto.
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (state.theme === 'auto') applyTheme();
+    });
+  } catch (e) { /* older browsers without addEventListener on MediaQueryList */ }
 
   $('#settingsBtn').addEventListener('click', () => {
     $('#settingsPanel').classList.toggle('open');
